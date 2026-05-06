@@ -1,0 +1,241 @@
+# comportements.yaml
+# Matrice état GEMMA × condition météo
+# Pour chaque combinaison → objectifs de confort à atteindre
+#
+# Conditions météo mappées depuis Météo France + sun.sun :
+#   degage_chaud   : clear-night / sunny + température > 22°C
+#   degage_froid   : clear-night / sunny + température <= 22°C
+#   nuageux        : cloudy / partlycloudy
+#   pluvieux       : rainy / pouring
+#   nuit           : sun.sun = below_horizon
+
+# ─────────────────────────────────────────────
+# Valeurs de luminosité (% du dimmable 0-255)
+# ─────────────────────────────────────────────
+# 0   = éteint
+# 30  = veilleuse / très tamisé
+# 60  = ambiance douce
+# 120 = confort lecture / repas
+# 180 = cuisine / travail
+# 255 = maximum / ménage
+
+etats:
+
+  SOMMEIL:
+    degage_chaud:
+      Eclairage_Chambre:   0
+      Chevet_Chambre:      0
+      Eclairage_Salon_tv:  0
+      Eclairage_Salon_table: 0
+      Wled_Salon:          0
+    degage_froid:
+      Eclairage_Chambre:   0
+      Chevet_Chambre:      0
+      Eclairage_Salon_tv:  0
+      Eclairage_Salon_table: 0
+      Wled_Salon:          0
+    nuageux:
+      Eclairage_Chambre:   0
+      Chevet_Chambre:      0
+      Eclairage_Salon_tv:  0
+      Eclairage_Salon_table: 0
+      Wled_Salon:          0
+    pluvieux:
+      Eclairage_Chambre:   0
+      Chevet_Chambre:      0
+      Eclairage_Salon_tv:  0
+      Eclairage_Salon_table: 0
+      Wled_Salon:          0
+    nuit:
+      Eclairage_Chambre:   0
+      Chevet_Chambre:      0
+      Eclairage_Salon_tv:  0
+      Eclairage_Salon_table: 0
+      Wled_Salon:          0
+
+  REPOS_TV:
+    degage_chaud:
+      Eclairage_Salon_tv:    40   # anti-reflets soleil
+      Eclairage_Salon_table: 0
+      Wled_Salon:            30   # ambiance douce derrière TV
+      Spot_Ambiance:         0
+    degage_froid:
+      Eclairage_Salon_tv:    50
+      Eclairage_Salon_table: 0
+      Wled_Salon:            40
+      Spot_Ambiance:         0
+    nuageux:
+      Eclairage_Salon_tv:    60
+      Eclairage_Salon_table: 20
+      Wled_Salon:            50
+      Spot_Ambiance:         30
+    pluvieux:
+      Eclairage_Salon_tv:    70
+      Eclairage_Salon_table: 30
+      Wled_Salon:            60
+      Spot_Ambiance:         40
+    nuit:
+      Eclairage_Salon_tv:    50
+      Eclairage_Salon_table: 0
+      Wled_Salon:            40
+      Spot_Ambiance:         20
+
+  REPOS_MUSIQUE:
+    degage_chaud:
+      Eclairage_Salon_tv:    60
+      Eclairage_Salon_table: 40
+      Wled_Salon:            80
+      Spot_Ambiance:         60
+    degage_froid:
+      Eclairage_Salon_tv:    70
+      Eclairage_Salon_table: 50
+      Wled_Salon:            90
+      Spot_Ambiance:         70
+    nuageux:
+      Eclairage_Salon_tv:    80
+      Eclairage_Salon_table: 60
+      Wled_Salon:            100
+      Spot_Ambiance:         80
+    pluvieux:
+      Eclairage_Salon_tv:    90
+      Eclairage_Salon_table: 70
+      Wled_Salon:            120
+      Spot_Ambiance:         90
+    nuit:
+      Eclairage_Salon_tv:    60
+      Eclairage_Salon_table: 40
+      Wled_Salon:            100
+      Spot_Ambiance:         80
+
+  NUTRITIF:
+    degage_chaud:
+      Interrupteur Eclairage Cuisine: true   # switch → on/off
+      Eclairage_Salon_tv:    0
+      Wled_Salon:            0
+    degage_froid:
+      Interrupteur Eclairage Cuisine: true
+      Eclairage_Salon_tv:    0
+      Wled_Salon:            0
+    nuageux:
+      Interrupteur Eclairage Cuisine: true
+      Eclairage_Salon_tv:    40
+      Wled_Salon:            30
+    pluvieux:
+      Interrupteur Eclairage Cuisine: true
+      Eclairage_Salon_tv:    60
+      Wled_Salon:            50
+    nuit:
+      Interrupteur Eclairage Cuisine: true
+      Eclairage_Salon_tv:    30
+      Wled_Salon:            40
+
+  ACTIF_BUREAU:
+    degage_chaud:
+      Eclairage_bureau:      180
+      Spot_bureau:           120
+      Wled_Salon:            0
+    degage_froid:
+      Eclairage_bureau:      180
+      Spot_bureau:           120
+      Wled_Salon:            0
+    nuageux:
+      Eclairage_bureau:      200
+      Spot_bureau:           140
+      Wled_Salon:            0
+    pluvieux:
+      Eclairage_bureau:      220
+      Spot_bureau:           160
+      Wled_Salon:            0
+    nuit:
+      Eclairage_bureau:      180
+      Spot_bureau:           120
+      Wled_Salon:            0
+
+  ENTRETIEN:
+    degage_chaud:
+      Eclairage_bureau:      255
+      Spot_bureau:           255
+      Eclairage_Salon_tv:    255
+      Eclairage_Salon_table: 255
+      Interrupteur Eclairage Cuisine: true
+      Wled_Salon:            0
+    degage_froid:
+      Eclairage_bureau:      255
+      Spot_bureau:           255
+      Eclairage_Salon_tv:    255
+      Eclairage_Salon_table: 255
+      Interrupteur Eclairage Cuisine: true
+      Wled_Salon:            0
+    nuageux:
+      Eclairage_bureau:      255
+      Spot_bureau:           255
+      Eclairage_Salon_tv:    255
+      Eclairage_Salon_table: 255
+      Interrupteur Eclairage Cuisine: true
+      Wled_Salon:            0
+    pluvieux:
+      Eclairage_bureau:      255
+      Spot_bureau:           255
+      Eclairage_Salon_tv:    255
+      Eclairage_Salon_table: 255
+      Interrupteur Eclairage Cuisine: true
+      Wled_Salon:            0
+    nuit:
+      Eclairage_bureau:      255
+      Spot_bureau:           255
+      Eclairage_Salon_tv:    255
+      Eclairage_Salon_table: 255
+      Interrupteur Eclairage Cuisine: true
+      Wled_Salon:            0
+
+  ABSENT:
+    degage_chaud:
+      Eclairage_bureau:      0
+      Spot_bureau:           0
+      Eclairage_Chambre:     0
+      Chevet_Chambre:        0
+      Eclairage_Salon_tv:    0
+      Eclairage_Salon_table: 0
+      Wled_Salon:            0
+      Spot_Ambiance:         0
+      Interrupteur Eclairage Cuisine: false
+    degage_froid:
+      Eclairage_bureau:      0
+      Spot_bureau:           0
+      Eclairage_Chambre:     0
+      Chevet_Chambre:        0
+      Eclairage_Salon_tv:    0
+      Eclairage_Salon_table: 0
+      Wled_Salon:            0
+      Spot_Ambiance:         0
+      Interrupteur Eclairage Cuisine: false
+    nuageux:
+      Eclairage_bureau:      0
+      Spot_bureau:           0
+      Eclairage_Chambre:     0
+      Chevet_Chambre:        0
+      Eclairage_Salon_tv:    0
+      Eclairage_Salon_table: 0
+      Wled_Salon:            0
+      Spot_Ambiance:         0
+      Interrupteur Eclairage Cuisine: false
+    pluvieux:
+      Eclairage_bureau:      0
+      Spot_bureau:           0
+      Eclairage_Chambre:     0
+      Chevet_Chambre:        0
+      Eclairage_Salon_tv:    0
+      Eclairage_Salon_table: 0
+      Wled_Salon:            0
+      Spot_Ambiance:         0
+      Interrupteur Eclairage Cuisine: false
+    nuit:
+      Eclairage_bureau:      0
+      Spot_bureau:           0
+      Eclairage_Chambre:     0
+      Chevet_Chambre:        0
+      Eclairage_Salon_tv:    0
+      Eclairage_Salon_table: 0
+      Wled_Salon:            0
+      Spot_Ambiance:         0
+      Interrupteur Eclairage Cuisine: false

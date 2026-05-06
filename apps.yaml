@@ -1,0 +1,25 @@
+signal_reader:
+  module: signal_reader
+  class: SignalReader
+  index_path: /config/index.yaml
+  snapshot_path: /config/appdaemon/apps/snapshot.json
+
+moteur_gemma:
+  module: moteur_gemma
+  class: MoteurGemma
+  snapshot_path: /config/appdaemon/apps/snapshot.json
+  poids_path: /config/appdaemon/apps/poids.yaml
+  gemma_state_path: /config/appdaemon/apps/gemma_state.json
+  entity_etat: input_text.gemma_etat_courant
+
+moteur_scoring:
+  module: moteur_scoring
+  class: MoteurScoring
+  gemma_state_path: /config/appdaemon/apps/gemma_state.json
+  comportements_path: /config/appdaemon/apps/comportements.yaml
+  snapshot_path: /config/appdaemon/apps/snapshot.json
+  index_path: /config/index.yaml
+  entity_etat: input_text.gemma_etat_courant
+  entity_meteo: weather.meteofrance_maison
+  entity_sun: sun.sun
+  temp_seuil_chaud: 22

@@ -1,0 +1,272 @@
+# ─────────────────────────────────────────────
+# CONTEXTE TEMPOREL
+# ─────────────────────────────────────────────
+contexte:
+  nuit:
+    debut: 23
+    fin: 7
+    modificateur: 1.3
+
+  soiree:
+    debut: 20
+    fin: 23
+    modificateur: 1.1
+
+  journee:
+    debut: 7
+    fin: 20
+    modificateur: 1.0
+
+# ─────────────────────────────────────────────
+# SEUIL GLOBAL
+# ─────────────────────────────────────────────
+seuil: 0.75
+
+# ─────────────────────────────────────────────
+# ETATS
+# ─────────────────────────────────────────────
+etats:
+
+# ────────────────
+# ABSENCE
+# ────────────────
+  ABSENT:
+    description: Absence humaine globale
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      Presence_globale:
+        poids: -1.0
+
+      Tele_salon:
+        poids: -0.5
+        valeur_active: "playing"
+
+      PC_HP:
+        poids: -0.5
+        valeur_active: "on"
+
+# ────────────────
+# SOMMEIL CHAMBRE
+# ────────────────
+  SOMMEIL:
+    description: Sommeil en chambre
+
+    contraintes:
+      duree_min: 1800
+      contexte: nuit
+
+    signaux:
+      Presence_chambre:
+        poids: 0.9
+
+      Mouvement_chambre:
+        poids: 0.2
+        tendance: "quasi_nul"
+
+      Tele_chambre:
+        poids: -0.6
+        valeur_active: "playing"
+
+      Luminosite:
+        poids: 0.5
+        seuil_max: 5
+
+# ────────────────
+# REVEIL NOCTURNE
+# ────────────────
+  REVEIL_NOCTURNE:
+    description: Activité courte durant la nuit
+
+    contraintes:
+      duree_max: 600
+      contexte: nuit
+
+    signaux:
+      Presence_chambre:
+        poids: 0.9
+
+      Mouvement_chambre:
+        poids: 0.7
+
+      Stabilite:
+        poids: -0.6
+
+# ────────────────
+# SALON - TV
+# ────────────────
+  REPOS_TV:
+    description: Visionnage TV
+
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      Tele_salon:
+        poids: 0.9
+        valeur_active: "playing"
+
+      Presence_salon:
+        poids: 0.8
+
+      Mouvement_salon:
+        poids: 0.3
+        tendance: "faible"
+
+# ────────────────
+# SALON - SOMMEIL
+# ────────────────
+  SOMMEIL_SALON:
+    description: Endormissement devant TV
+
+    contraintes:
+      duree_min: 900
+
+    signaux:
+      Presence_salon:
+        poids: 0.9
+
+      Mouvement_salon:
+        poids: 0.1
+        tendance: "nul"
+
+      Tele_salon:
+        poids: 0.6
+
+      Inactivite:
+        poids: 0.9
+
+# ────────────────
+# SALON - REPAS
+# ────────────────
+  SALON_REPAS:
+    description: Prise de repas
+
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      Presence_salon:
+        poids: 0.9
+
+      Mouvement_salon:
+        poids: 0.7
+        tendance: "modere"
+
+      Tele_salon:
+        poids: -0.3
+
+# ────────────────
+# BUREAU ACTIF
+# ────────────────
+  ACTIF_BUREAU:
+    description: Travail sur PC
+
+    contraintes:
+      duree_min: 900
+
+    signaux:
+      PC_HP:
+        poids: 0.95
+        valeur_active: "on"
+
+      Presence_bureau:
+        poids: 0.8
+
+      Mouvement_bureau:
+        poids: 0.6
+        tendance: "micro"
+
+# ────────────────
+# BUREAU LECTURE
+# ────────────────
+  LECTURE_BUREAU:
+    description: Lecture ou repos calme
+
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      Presence_bureau:
+        poids: 0.8
+
+      Mouvement_bureau:
+        poids: 0.4
+        tendance: "faible"
+
+      PC_HP:
+        poids: -0.5
+
+# ────────────────
+# PASSAGE BUREAU
+# ────────────────
+  PASSAGE_BUREAU:
+    description: Passage rapide
+
+    contraintes:
+      duree_max: 180
+
+    signaux:
+      Presence_bureau:
+        poids: 0.6
+
+      Mouvement_bureau:
+        poids: 0.9
+        tendance: "rapide"
+
+      Stabilite:
+        poids: -0.8
+
+# ────────────────
+# CUISINE RAPIDE
+# ────────────────
+  CUISINE_SNACK:
+    description: Passage rapide cuisine
+
+    contraintes:
+      duree_max: 300
+
+    signaux:
+      Presence_cuisine:
+        poids: 0.8
+
+      Mouvement_cuisine:
+        poids: 0.8
+        tendance: "court"
+
+# ────────────────
+# CUISINE ACTIVITE
+# ────────────────
+  CUISINE_ACTIVITE:
+    description: Préparation ou cuisson
+
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      Presence_cuisine:
+        poids: 0.9
+
+      Mouvement_cuisine:
+        poids: 0.7
+
+      Eclairage:
+        poids: 0.4
+
+# ────────────────
+# CUISINE ENTRETIEN
+# ────────────────
+  CUISINE_ENTRETIEN:
+    description: Vaisselle ou rangement
+
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      Presence_cuisine:
+        poids: 0.9
+
+      Mouvement_cuisine:
+        poids: 0.8
+        tendance: "repetitif"
