@@ -23,3 +23,11 @@ moteur_scoring:
   entity_meteo: weather.meteofrance_maison
   entity_sun: sun.sun
   temp_seuil_chaud: 22
+
+presence:
+  module: presence
+  class: Presence
+
+person_repository:
+  module: person_repository
+  class: PersonRepository
