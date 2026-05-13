@@ -1,0 +1,162 @@
+# device_map.yaml — JARVIS
+# Devices multi-entités avec seuils de stabilisation
+# Complément de index.yaml (devices à entité unique)
+# ─────────────────────────────────────────────────────────────────────────────
+# Règle : ce fichier contient uniquement les devices qui exposent N entités utiles.
+# Chaque device est lu par device_map_reader.py → snapshot["vectors"]
+# moteur_scoring.py consomme vectors + signals sans connaître le capteur physique.
+# ─────────────────────────────────────────────────────────────────────────────
+
+pieces:
+
+  # ── ZONE NUIT + TRAVAIL ──────────────────────────────────────────────────
+
+  chambre:
+    recepteurs:
+      - device: LD2450_Chambre
+        id: capteur_mvt_chambre
+        entity: binary_sensor.capteur_mvt_chambre_presence
+        triggers:
+          mouvement:       binary_sensor.capteur_mvt_chambre_cible_en_mouvement
+          immobile:        binary_sensor.capteur_mvt_chambre_cible_immobile
+          nb_cibles:       sensor.capteur_mvt_chambre_nombre_de_cibles
+          cible_1_vitesse: sensor.capteur_mvt_chambre_cible_1_vitesse
+          cible_1_direction: text_sensor.capteur_mvt_chambre_cible_1_direction
+          cible_2_vitesse: sensor.capteur_mvt_chambre_cible_2_vitesse
+          cible_2_direction: text_sensor.capteur_mvt_chambre_cible_2_direction
+          cible_3_vitesse: sensor.capteur_mvt_chambre_cible_3_vitesse
+          cible_3_direction: text_sensor.capteur_mvt_chambre_cible_3_direction
+        seuils:
+          vitesse_silence: 5      # cm/s — en dessous = immobile (filtre bruit)
+          stabilisation: 120      # secondes avant que "dort" soit confirmé
+          nb_cibles_delai: 30     # secondes avant propagation changement nb_cibles
+
+  bureau:
+    recepteurs:
+      - device: LD2450_Bureau
+        id: capteur_mvt_bureau
+        entity: binary_sensor.capteur_mvt_bureau_presence
+        triggers:
+          mouvement:       binary_sensor.capteur_mvt_bureau_cible_en_mouvement
+          immobile:        binary_sensor.capteur_mvt_bureau_cible_immobile
+          nb_cibles:       sensor.capteur_mvt_bureau_nombre_de_cibles
+          cible_1_vitesse: sensor.capteur_mvt_bureau_cible_1_vitesse
+          cible_1_direction: text_sensor.capteur_mvt_bureau_cible_1_direction
+          cible_2_vitesse: sensor.capteur_mvt_bureau_cible_2_vitesse
+          cible_2_direction: text_sensor.capteur_mvt_bureau_cible_2_direction
+          cible_3_vitesse: sensor.capteur_mvt_bureau_cible_3_vitesse
+          cible_3_direction: text_sensor.capteur_mvt_bureau_cible_3_direction
+        seuils:
+          vitesse_silence: 5
+          stabilisation: 60       # Bureau : délai plus court (travail actif fréquent)
+          nb_cibles_delai: 15
+
+  # ── FP2 N°1 — Zone nuit (couloir nuit + portes chambre/bureau/sdb) ───────
+  # À compléter après observation des entités réelles dans HA
+
+  couloir_nuit:
+    recepteurs:
+      - device: AqaraFP2_ZoneNuit
+        id: fp2_zone_nuit
+        entity: binary_sensor.fp2_zone_nuit_presence
+        triggers:
+          # Cibles (positions X/Y dans la pièce)
+          cible_1_x:        sensor.fp2_zone_nuit_target_1_x
+          cible_1_y:        sensor.fp2_zone_nuit_target_1_y
+          cible_1_vitesse:  sensor.fp2_zone_nuit_target_1_speed
+          cible_1_direction: sensor.fp2_zone_nuit_target_1_angle
+          cible_2_x:        sensor.fp2_zone_nuit_target_2_x
+          cible_2_y:        sensor.fp2_zone_nuit_target_2_y
+          cible_2_vitesse:  sensor.fp2_zone_nuit_target_2_speed
+          # Présence par sous-zone (zones nommées dans l'appli Aqara)
+          zone_porte_chambre:  binary_sensor.fp2_zone_nuit_zone_porte_chambre
+          zone_porte_bureau:   binary_sensor.fp2_zone_nuit_zone_porte_bureau
+          zone_porte_sdb:      binary_sensor.fp2_zone_nuit_zone_porte_sdb
+          zone_couloir:        binary_sensor.fp2_zone_nuit_zone_couloir
+        seuils:
+          vitesse_silence: 8      # FP2 plus sensible que LD2450 — seuil légèrement plus haut
+          stabilisation: 10       # Couloir : transitions rapides, pas de délai long
+          nb_cibles_delai: 5
+        # Zones portes pour détection de flux (coordonnées à calibrer après livraison FP2)
+        # Les coordonnées sont en mètres depuis le coin de référence du capteur
+        zones_portes:
+          porte_chambre:
+            x_min: 0.8
+            x_max: 1.6
+            y_min: 0.0
+            y_max: 1.0
+          porte_bureau:
+            x_min: 2.4
+            x_max: 3.2
+            y_min: 0.0
+            y_max: 1.0
+          porte_sdb:
+            x_min: 0.0
+            x_max: 0.8
+            y_min: 1.5
+            y_max: 2.5
+          pivot_zones:          # Porte de liaison nuit ↔ vie
+            x_min: 1.8
+            x_max: 2.6
+            y_min: 2.8
+            y_max: 4.0
+
+  # ── FP2 N°2 — Zone vie (salon + cuisine + couloir principal) ─────────────
+  # À compléter après observation des entités réelles dans HA
+
+  couloir_principal:
+    recepteurs:
+      - device: AqaraFP2_ZoneVie
+        id: fp2_zone_vie
+        entity: binary_sensor.fp2_zone_vie_presence
+        triggers:
+          cible_1_x:        sensor.fp2_zone_vie_target_1_x
+          cible_1_y:        sensor.fp2_zone_vie_target_1_y
+          cible_1_vitesse:  sensor.fp2_zone_vie_target_1_speed
+          cible_1_direction: sensor.fp2_zone_vie_target_1_angle
+          cible_2_x:        sensor.fp2_zone_vie_target_2_x
+          cible_2_y:        sensor.fp2_zone_vie_target_2_y
+          cible_2_vitesse:  sensor.fp2_zone_vie_target_2_speed
+          # Présence par sous-zone
+          zone_salon:       binary_sensor.fp2_zone_vie_zone_salon
+          zone_cuisine:     binary_sensor.fp2_zone_vie_zone_cuisine
+          zone_entree:      binary_sensor.fp2_zone_vie_zone_entree
+          zone_couloir:     binary_sensor.fp2_zone_vie_zone_couloir
+        seuils:
+          vitesse_silence: 8
+          stabilisation: 10
+          nb_cibles_delai: 5
+        zones_portes:
+          porte_salon:
+            x_min: 0.0
+            x_max: 1.2
+            y_min: 1.8
+            y_max: 3.0
+          porte_cuisine:
+            x_min: 2.0
+            x_max: 3.0
+            y_min: 1.8
+            y_max: 3.0
+          porte_entree:
+            x_min: 1.0
+            x_max: 2.2
+            y_min: 4.5
+            y_max: 6.0
+          pivot_zones:          # Porte liaison vie ↔ nuit (côté vie)
+            x_min: 1.8
+            x_max: 2.6
+            y_min: 0.0
+            y_max: 1.2
+
+  # ── EXTÉRIEUR ─────────────────────────────────────────────────────────────
+
+  exterieur:
+    recepteurs:
+      - device: CapteurExterieur
+        id: meteo_locale
+        entity: sensor.capteur_ext_lumiere
+        triggers:
+          pluie: sensor.capteur_ext_pluie
+        seuils:
+          lux_delta: 10           # Variation minimale lux avant mise à jour
+          stabilisation: 30       # 30s avant propagation changement météo
