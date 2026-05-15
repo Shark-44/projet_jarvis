@@ -8,7 +8,7 @@ from datetime import datetime
 class MoteurGemma(hass.Hass):
     """
     Moteur GEMMA — Étape 3
-    Lit le snapshot.json produit par SignalReader,
+    Lit le snapshot.json produit par SignalReader et DeviceMapReader,
     calcule le score de chaque état, et publie l'état courant.
     """
 
@@ -55,28 +55,45 @@ class MoteurGemma(hass.Hass):
             return {}
         with open(self.snapshot_path, "r") as f:
             data = json.load(f)
-            return data.get("signals", {})
+
+        signals = data.get("signals", {})
+        vectors = data.get("vectors", {})
+
+        for device_id, vecteur in vectors.items():
+            if vecteur.get("etat_derive"):
+                signals[f"{device_id}_etat"] = {
+                    "value": vecteur.get("etat_derive"),
+                    "piece": vecteur.get("piece"),
+                    "type":  "etat_derive",
+                }
+            for key, val in vecteur.get("valeurs", {}).items():
+                signals[f"{device_id}_{key}"] = {
+                    "value": val,
+                    "piece": vecteur.get("piece"),
+                    "type":  "vector",
+                }
+
+        return signals
 
     # ─────────────────────────────────────────────
     # Évaluation principale
     # ─────────────────────────────────────────────
 
     def _evaluer(self, kwargs=None):
-        signals  = self._load_snapshot()
+        signals = self._load_snapshot()
         if not signals:
             return
 
-        heure    = datetime.now().hour
-        modif    = self._modificateur_contexte(heure)
-        seuil    = self.poids.get("seuil", 0.75)
-        etats    = self.poids.get("etats", {})
+        heure = datetime.now().hour
+        modif = self._modificateur_contexte(heure)
+        seuil = self.poids.get("seuil", 0.75)
+        etats = self.poids.get("etats", {})
 
         scores = {}
         for nom_etat, config in etats.items():
             score = self._calculer_score(signals, config, modif)
             scores[nom_etat] = round(score, 3)
 
-        # Tri par score décroissant
         scores_tries = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
         meilleur_etat, meilleur_score = scores_tries[0]
@@ -97,8 +114,8 @@ class MoteurGemma(hass.Hass):
         if not signaux_config:
             return 0.0
 
-        score_total   = 0.0
-        poids_total   = 0.0
+        score_total = 0.0
+        poids_total = 0.0
 
         for signal_id, params in signaux_config.items():
             poids = params.get("poids", 0.5)
@@ -106,7 +123,7 @@ class MoteurGemma(hass.Hass):
 
             valeur = self._lire_valeur(signals, signal_id)
             if valeur is None:
-                continue  # capteur indisponible → on ignore
+                continue
 
             contribution = self._evaluer_signal(valeur, params) * poids
             score_total += contribution
@@ -115,8 +132,6 @@ class MoteurGemma(hass.Hass):
             return 0.0
 
         score_brut = score_total / poids_total
-
-        # Modificateur contextuel (heure de la nuit amplifie le sommeil, etc.)
         return min(score_brut * modif_contexte, 1.0)
 
     def _lire_valeur(self, signals, signal_id):
@@ -128,7 +143,6 @@ class MoteurGemma(hass.Hass):
     def _evaluer_signal(self, valeur, params):
         """
         Retourne 1.0 si le signal correspond au critère, 0.0 sinon.
-        Trois types de critères :
           - valeur_active : correspondance exacte (bool ou string)
           - seuil_max     : la valeur doit être <= seuil_max
           - seuil_min     : la valeur doit être >= seuil_min
@@ -163,7 +177,7 @@ class MoteurGemma(hass.Hass):
             debut = cfg.get("debut", 0)
             fin   = cfg.get("fin", 24)
             modif = cfg.get("modificateur", 1.0)
-            if debut > fin:  # plage qui passe minuit (ex: 23h → 7h)
+            if debut > fin:
                 if heure >= debut or heure < fin:
                     return modif
             else:
@@ -178,14 +192,13 @@ class MoteurGemma(hass.Hass):
     def _publier(self, etat, score, tous_scores, heure, modif):
         maintenant = datetime.now().isoformat(timespec="seconds")
 
-        # 1. Fichier gemma_state.json (lu par le moteur de scoring étape 4)
         sortie = {
-            "generated_at":  maintenant,
-            "etat_courant":  etat,
-            "score":         score,
-            "heure":         heure,
-            "modificateur":  modif,
-            "tous_scores":   tous_scores,
+            "generated_at": maintenant,
+            "etat_courant": etat,
+            "score":        score,
+            "heure":        heure,
+            "modificateur": modif,
+            "tous_scores":  tous_scores,
         }
         try:
             with open(self.gemma_state_path, "w") as f:
@@ -193,22 +206,20 @@ class MoteurGemma(hass.Hass):
         except Exception as e:
             self.log(f"Erreur écriture gemma_state.json : {e}", level="ERROR")
 
-        # 2. Sensor Home Assistant (visible dans le dashboard HA)
         try:
             self.set_state(
                 self.entity_etat,
                 state=etat,
                 attributes={
-                    "score":        score,
-                    "tous_scores":  tous_scores,
-                    "updated_at":   maintenant,
+                    "score":         score,
+                    "tous_scores":   tous_scores,
+                    "updated_at":    maintenant,
                     "friendly_name": "GEMMA — État courant",
                 }
             )
         except Exception as e:
             self.log(f"Erreur mise à jour entity HA : {e}", level="WARNING")
 
-        # 3. Log si changement d'état
         if etat != self.etat_courant:
             self.log(f"État GEMMA : {self.etat_courant} → {etat} (score={score})")
             self.etat_courant = etat
