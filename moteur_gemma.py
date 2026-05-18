@@ -1,6 +1,5 @@
 import appdaemon.plugins.hass.hassapi as hass
 import yaml
-import json
 import os
 from datetime import datetime
 
@@ -13,10 +12,6 @@ class MoteurGemma(hass.Hass):
     """
 
     def initialize(self):
-        self.snapshot_path = self.args.get(
-            "snapshot_path",
-            "/config/appdaemon/apps/snapshot.json"
-        )
         self.poids_path = self.args.get(
             "poids_path",
             "/config/appdaemon/apps/poids.yaml"
@@ -50,28 +45,41 @@ class MoteurGemma(hass.Hass):
             return yaml.safe_load(f) or {}
 
     def _load_snapshot(self):
-        if not os.path.exists(self.snapshot_path):
-            self.log("snapshot.json introuvable — SignalReader est-il lancé ?", level="WARNING")
-            return {}
-        with open(self.snapshot_path, "r") as f:
-            data = json.load(f)
+        """
+        Lit les trois entités HA en mémoire et reconstruit
+        le dict signals fusionné utilisé par le scoring.
+        Remplace l'ancien json.load(snapshot.json).
+        """
+        signals = {}
 
-        signals = data.get("signals", {})
-        vectors = data.get("vectors", {})
+        # ── signals ────────────────────────────────────────────────
+        try:
+            raw = self.get_state("sensor.jarvis_signals", attribute="all") or {}
+            signals.update(raw.get("attributes", {}))
+        except Exception as e:
+            self.log(f"Erreur lecture sensor.jarvis_signals : {e}", level="WARNING")
 
-        for device_id, vecteur in vectors.items():
-            if vecteur.get("etat_derive"):
-                signals[f"{device_id}_etat"] = {
-                    "value": vecteur.get("etat_derive"),
-                    "piece": vecteur.get("piece"),
-                    "type":  "etat_derive",
-                }
-            for key, val in vecteur.get("valeurs", {}).items():
-                signals[f"{device_id}_{key}"] = {
-                    "value": val,
-                    "piece": vecteur.get("piece"),
-                    "type":  "vector",
-                }
+        # ── vectors → injection dans signals ───────────────────────
+        try:
+            raw = self.get_state("sensor.jarvis_vectors", attribute="all") or {}
+            vectors = raw.get("attributes", {})
+            for device_id, vecteur in vectors.items():
+                if not isinstance(vecteur, dict):
+                    continue
+                if vecteur.get("etat_derive"):
+                    signals[f"{device_id}_etat"] = {
+                        "value": vecteur.get("etat_derive"),
+                        "piece": vecteur.get("piece"),
+                        "type":  "etat_derive",
+                    }
+                for key, val in vecteur.get("valeurs", {}).items():
+                    signals[f"{device_id}_{key}"] = {
+                        "value": val,
+                        "piece": vecteur.get("piece"),
+                        "type":  "vector",
+                    }
+        except Exception as e:
+            self.log(f"Erreur lecture sensor.jarvis_vectors : {e}", level="WARNING")
 
         return signals
 

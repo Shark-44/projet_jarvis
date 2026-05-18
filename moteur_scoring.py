@@ -23,10 +23,6 @@ class MoteurScoring(hass.Hass):
     """
 
     def initialize(self):
-        self.snapshot_path = self.args.get(
-            "snapshot_path",
-            "/config/appdaemon/apps/snapshot.json"
-        )
         self.comportements_path = self.args.get(
             "comportements_path",
             "/config/appdaemon/apps/comportements.yaml"
@@ -101,17 +97,17 @@ class MoteurScoring(hass.Hass):
 
     def _lire_presence(self):
         """
-        Lit le bloc presence dans snapshot.json.
+        Lit sensor.jarvis_presence en mémoire.
         Défaut sécurisé : maison_occupee=True si lecture impossible.
         (On ne risque pas d'éteindre si doute.)
         """
         try:
-            if os.path.exists(self.snapshot_path):
-                with open(self.snapshot_path, "r") as f:
-                    data = json.load(f)
-                    return data.get("presence", {"maison_occupee": True})
+            raw = self.get_state("sensor.jarvis_presence", attribute="all") or {}
+            attrs = raw.get("attributes", {})
+            if attrs:
+                return attrs
         except Exception as e:
-            self.log(f"Erreur lecture presence dans snapshot : {e}", level="WARNING")
+            self.log(f"Erreur lecture sensor.jarvis_presence : {e}", level="WARNING")
         return {"maison_occupee": True}
 
     # ─────────────────────────────────────────────
@@ -253,14 +249,12 @@ class MoteurScoring(hass.Hass):
         Priorité 1 : snapshot["signals"]
         Priorité 2 : index.yaml
         """
-        # Priorité 1 — snapshot signals
+        # Priorité 1 — sensor.jarvis_signals en mémoire
         try:
-            if os.path.exists(self.snapshot_path):
-                with open(self.snapshot_path, "r") as f:
-                    data = json.load(f)
-                signals = data.get("signals", {})
-                if actionneur_id in signals:
-                    return signals[actionneur_id].get("entity")
+            raw = self.get_state("sensor.jarvis_signals", attribute="all") or {}
+            signals = raw.get("attributes", {})
+            if actionneur_id in signals:
+                return signals[actionneur_id].get("entity")
         except Exception:
             pass
 

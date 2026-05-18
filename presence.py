@@ -1,6 +1,4 @@
 import appdaemon.plugins.hass.hassapi as hass
-import json
-import os
 from datetime import datetime
 
 
@@ -23,11 +21,6 @@ class Presence(hass.Hass):
     def initialize(self):
         self.persons  = self.get_app("person_repository")
         self.eteindre = self.get_app("eteindre_maison")
-
-        self.snapshot_path = self.args.get(
-            "snapshot_path",
-            "/config/appdaemon/apps/snapshot.json"
-        )
 
         # Écriture initiale au démarrage
         self._write_snapshot_presence()
@@ -73,35 +66,26 @@ class Presence(hass.Hass):
 
     def _write_snapshot_presence(self):
         """
-        Écrit le bloc presence dans snapshot.json de façon atomique.
-        Ne touche pas aux autres blocs (signals, vectors).
+        Écrit le bloc presence dans l'entité HA sensor.jarvis_presence.
+        Pas de fichier disque — écriture mémoire native AppDaemon.
         """
         home = self.persons.get_all_home()
 
-        # Lecture snapshot existant
-        snapshot = {}
-        try:
-            if os.path.exists(self.snapshot_path):
-                with open(self.snapshot_path, "r") as f:
-                    snapshot = json.load(f)
-        except Exception as e:
-            self.log(f"Lecture snapshot échouée : {e} — réécriture complète", level="WARNING")
-
-        snapshot["presence"] = {
-            "maison_occupee": len(home) > 0,
-            "personnes_home": home,
-            "derniere_maj": datetime.now().isoformat()
+        attrs = {
+            "maison_occupee":  len(home) > 0,
+            "personnes_home":  home,
+            "derniere_maj":    datetime.now().isoformat(),
         }
 
-        # Écriture atomique : tmp + os.replace évite la corruption
-        tmp_path = self.snapshot_path + ".tmp"
         try:
-            with open(tmp_path, "w") as f:
-                json.dump(snapshot, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, self.snapshot_path)
-            self.log(f"snapshot[presence] mis à jour — home: {home}")
+            self.set_state(
+                "sensor.jarvis_presence",
+                state="ok",
+                attributes=attrs,
+            )
+            self.log(f"sensor.jarvis_presence mis à jour — home: {home}")
         except Exception as e:
-            self.log(f"Erreur écriture snapshot presence : {e}", level="ERROR")
+            self.log(f"Erreur écriture sensor.jarvis_presence : {e}", level="ERROR")
 
     # ─────────────────────────────────────────────
     # Utilitaires

@@ -1,7 +1,5 @@
 import appdaemon.plugins.hass.hassapi as hass
 import yaml
-import json
-import os
 import time
 from datetime import datetime
 
@@ -33,10 +31,6 @@ class DeviceMapReader(hass.Hass):
         self.device_map_path = self.args.get(
             "device_map_path",
             "/config/appdaemon/apps/device_map.yaml"
-        )
-        self.snapshot_path = self.args.get(
-            "snapshot_path",
-            "/config/appdaemon/apps/snapshot.json"
         )
 
         # Registre interne : id_device → {derniere_valeur, timestamp, ...}
@@ -459,25 +453,20 @@ class DeviceMapReader(hass.Hass):
 
     def _write_snapshot(self, device_id, piece, vecteur):
         """
-        Lit le snapshot existant, met à jour la section "vectors",
-        et réécrit le fichier atomiquement.
-        signal_reader.py écrit dans "signals" — on ne touche pas à cette section.
+        Met à jour la section vectors de l'entité HA sensor.jarvis_vectors.
+        Lit l'état courant en mémoire, fusionne le device mis à jour,
+        et réécrit l'entité — pas de fichier disque.
         """
-        snapshot = {}
-
+        # Lecture de l'état courant de l'entité
         try:
-            if os.path.exists(self.snapshot_path):
-                with open(self.snapshot_path, "r") as f:
-                    snapshot = json.load(f)
-        except Exception as e:
-            self.log(f"Erreur lecture snapshot : {e}", level="WARNING")
+            current = self.get_state("sensor.jarvis_vectors", attribute="all") or {}
+            vectors = dict(current.get("attributes", {}))
+        except Exception:
+            vectors = {}
 
-        if "vectors" not in snapshot:
-            snapshot["vectors"] = {}
-
-        snapshot["vectors"][device_id] = {
-            "piece": piece,
-            "timestamp": vecteur.get("timestamp"),
+        vectors[device_id] = {
+            "piece":       piece,
+            "timestamp":   vecteur.get("timestamp"),
             "etat_derive": vecteur.get("etat_derive"),
             "valeurs": {
                 k: v for k, v in vecteur.items()
@@ -486,14 +475,14 @@ class DeviceMapReader(hass.Hass):
         }
 
         try:
-            tmp_path = self.snapshot_path + ".tmp"
-            with open(tmp_path, "w") as f:
-                json.dump(snapshot, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, self.snapshot_path)
-
+            self.set_state(
+                "sensor.jarvis_vectors",
+                state="ok",
+                attributes=vectors,
+            )
             self.log(
-                f"Snapshot mis à jour — {device_id} → {vecteur.get('etat_derive')}",
+                f"sensor.jarvis_vectors mis à jour — {device_id} → {vecteur.get('etat_derive')}",
                 level="DEBUG"
             )
         except Exception as e:
-            self.log(f"Erreur écriture snapshot : {e}", level="ERROR")
+            self.log(f"Erreur écriture sensor.jarvis_vectors : {e}", level="ERROR")

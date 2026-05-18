@@ -1,7 +1,6 @@
 import appdaemon.plugins.hass.hassapi as hass
 import yaml
 import os
-import json
 from datetime import datetime
 
 
@@ -17,10 +16,6 @@ class SignalReader(hass.Hass):
         self.index_path = self.args.get(
             "index_path",
             "/config/index.yaml"
-        )
-        self.snapshot_path = self.args.get(
-            "snapshot_path",
-            "/config/appdaemon/apps/snapshot.json"
         )
 
         self.index    = self._load_index()
@@ -235,16 +230,18 @@ class SignalReader(hass.Hass):
         return raw
 
     def _write_snapshot(self):
-        """Écrit le snapshot sur disque pour le moteur GEMMA."""
-        out = {
-            "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "signals":      self.snapshot,
-        }
+        """
+        Écrit la section signals dans l'entité HA sensor.jarvis_signals.
+        Pas de fichier disque — écriture mémoire native AppDaemon.
+        """
         try:
-            with open(self.snapshot_path, "w") as f:
-                json.dump(out, f, ensure_ascii=False, indent=2)
+            self.set_state(
+                "sensor.jarvis_signals",
+                state="ok",
+                attributes=self.snapshot,
+            )
         except Exception as e:
-            self.log(f"Impossible d'écrire le snapshot : {e}", level="ERROR")
+            self.log(f"Impossible d'écrire sensor.jarvis_signals : {e}", level="ERROR")
 
     # ─────────────────────────────────────────────
     # API publique — appelable par les briques voisines

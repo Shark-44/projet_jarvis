@@ -1,0 +1,551 @@
+# ─────────────────────────────────────────────────────────────────
+# poids.yaml — v0.4
+# Table de vérité GEMMA
+# Répond à deux questions simultanément :
+#   1. Où est l'humain ?
+#   2. Que fait-il ?
+#
+# Structure de chaque signal :
+#   poids         : contribution au score (0.0 → 1.0, négatif = exclusion)
+#   valeur_active : valeur attendue pour que le signal contribue
+#   seuil_max     : valeur numérique ≤ seuil → contribue
+#   seuil_min     : valeur numérique ≥ seuil → contribue
+#
+# Types de signaux :
+#   primaire    : détecte la présence dans la pièce (poids élevé)
+#   renforçant  : confirme l'activité (poids moyen)
+#   contextuel  : affine la certitude (poids faible)
+#   négatif     : exclut l'état (poids négatif)
+#
+# Contraintes :
+#   duree_min   : durée minimale en secondes pour confirmer l'état
+#   duree_max   : durée maximale — au-delà c'est un autre état
+#   contexte    : plage horaire requise
+#
+# Changements v0.4 :
+#   - PIR chambre et bureau supprimés — LD2450 supérieur en tout point
+#   - Chambre et Bureau migrent vers signal_id device_map_reader
+#     (Presence_chambre_etat, Presence_bureau_etat, presence_piece, etc.)
+#   - Salle de bain ajoutée (PIR → signal_reader, 4 états par durée)
+#   - Capteur_presence_sdb injecté comme signal contextuel dans les
+#     états existants (ABSENT, SOMMEIL, REVEIL_*, HABILLAGE, INSOMNIE)
+#
+# Signaux disponibles aujourd'hui :
+#   LD2450 Chambre   Presence_chambre_etat / presence_piece / presence_lit
+#   LD2450 Bureau    Presence_bureau_etat / presence_piece / presence_cliclac / presence_porte
+#   PIR              Cuisine, SDB, WC
+#   Porte            Couloir (contact)
+#   Lux              Salon (intérieur) + extérieur
+#   PC_HP            Bureau
+#   Tele             Salon (media_player)
+#   Ampli            Salon (binary_sensor)
+#
+# Signaux à venir :
+#   FP2_Salon        présence + zone + posture
+#   FP2_Couloir      flux + direction
+#   AppleTV          media_player chambre
+#   ESP32_Salon      ping présence active salon
+#   Pluie            sensor extérieur
+#   Switch_chevet    intention humaine
+# ─────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────
+# CONTEXTE TEMPOREL
+# ─────────────────────────────────────────────
+contexte:
+  nuit:
+    debut: 23
+    fin: 6
+    modificateur: 1.3
+
+  matin:
+    debut: 6
+    fin: 9
+    modificateur: 1.1
+
+  journee:
+    debut: 9
+    fin: 20
+    modificateur: 1.0
+
+  soiree:
+    debut: 20
+    fin: 23
+    modificateur: 1.1
+
+
+# ─────────────────────────────────────────────
+# SEUIL GLOBAL
+# ─────────────────────────────────────────────
+seuil: 0.75
+
+
+# ─────────────────────────────────────────────
+# ÉTATS
+# ─────────────────────────────────────────────
+etats:
+
+
+  # ══════════════════════════════════════════
+  # ABSENCE
+  # ══════════════════════════════════════════
+
+  ABSENT:
+    description: "Aucun humain dans la maison"
+    contraintes:
+      duree_min: 600              # 10min avant de confirmer l'absence
+
+    signaux:
+      # Primaire — gardien du pipeline
+      Presence_globale:                { poids: -1.0 }
+
+      # Négatifs — tout signal actif exclut l'absence
+      Tele:                            { poids: -0.8, valeur_active: "playing" }
+      PC_HP:                           { poids: -0.8, valeur_active: "on" }
+      Ampli:                           { poids: -0.6, valeur_active: true }
+      ESP32_Salon:                     { poids: -0.5, valeur_active: true }
+      Capteur_presence_sdb:            { poids: -0.7, valeur_active: true }   # quelqu'un en SDB = pas absent
+      Capteur_presence_cuisine:        { poids: -0.6, valeur_active: true }
+
+
+  # ══════════════════════════════════════════
+  # CHAMBRE — états
+  # ══════════════════════════════════════════
+
+  SOMMEIL:
+    description: "Chambre — sommeil"
+    contraintes:
+      duree_min: 1800             # 30min pour confirmer
+      contexte: nuit
+
+    signaux:
+      # Primaires
+      Presence_chambre_etat:           { poids: 0.95, valeur_active: "dort" }
+      Presence_chambre_presence_piece: { poids: 0.7,  valeur_active: true }
+
+      # Renforçants
+      Presence_chambre_presence_lit:   { poids: 0.8,  valeur_active: true }
+      Lux_exterieur:                   { poids: 0.4,  seuil_max: 5 }
+      Switch_chevet:                   { poids: -0.6, valeur_active: true }   # allumé = pas endormi
+
+      # Négatifs
+      Capteur_presence_sdb:            { poids: -0.5, valeur_active: true }   # en SDB = pas endormi
+      Tele:                            { poids: -0.5, valeur_active: "playing" }
+      AppleTV:                         { poids: -0.7, valeur_active: "playing" }
+      PC_HP:                           { poids: -0.6, valeur_active: "on" }
+
+
+  REVEIL_PHYSIOLOGIQUE:
+    description: "Chambre — réveil court, besoin naturel"
+    contraintes:
+      duree_max: 600              # max 10min — sinon autre état
+      contexte: nuit
+
+    signaux:
+      # Primaire
+      Switch_chevet:                   { poids: 0.9, valeur_active: true }
+
+      # Renforçants
+      Presence_chambre_etat:           { poids: 0.7, valeur_active: "actif" }
+      Capteur_presence_sdb:            { poids: 0.8, valeur_active: true }    # confirme besoin naturel nuit
+      Capteur_porte_wc:                { poids: 0.7, valeur_active: true }
+
+      # Contextuel
+      Presence_chambre_presence_piece: { poids: 0.5, valeur_active: true }
+
+
+  REVEIL_ROUTINE:
+    description: "Chambre — réveil programmé, début de journée"
+    contraintes:
+      contexte: matin
+
+    signaux:
+      # Primaire
+      Alarme_programmee:               { poids: 0.95 }
+
+      # Renforçants
+      Switch_chevet:                   { poids: 0.7, valeur_active: true }
+      Presence_chambre_etat:           { poids: 0.6, valeur_active: "actif" }
+      Presence_chambre_presence_piece: { poids: 0.5, valeur_active: true }
+      Capteur_presence_sdb:            { poids: 0.6, valeur_active: true }    # douche matin renforce
+
+
+  INSOMNIE:
+    description: "Chambre ou Salon — nuit longue, activité choisie"
+    contraintes:
+      duree_min: 1800             # 30min — distingue du réveil court
+      contexte: nuit
+
+    signaux:
+      # Primaire
+      Switch_chevet:                   { poids: 0.8, valeur_active: true }
+
+      # Renforçants
+      Presence_chambre_etat:           { poids: 0.6, valeur_active: "lit" }
+      FP2_Salon:                       { poids: 0.7, valeur_active: true }
+      AppleTV:                         { poids: 0.6, valeur_active: "playing" }
+      Tele:                            { poids: 0.5, valeur_active: "playing" }
+
+      # Contextuel
+      Lux_exterieur:                   { poids: 0.3, seuil_max: 5 }
+
+      # Négatif
+      Capteur_presence_sdb:            { poids: -0.3, valeur_active: true }   # en SDB = pas insomnie salon
+
+
+  HABILLAGE:
+    description: "Chambre — habillage, préparation"
+    contraintes:
+      duree_min: 120
+      duree_max: 900
+      contexte: matin
+
+    signaux:
+      # Primaires
+      Presence_chambre_etat:           { poids: 0.9, valeur_active: "actif" }
+      Presence_chambre_presence_piece: { poids: 0.7, valeur_active: true }
+      Capteur_presence_sdb:            { poids: 0.7, valeur_active: true }    # préparation matin
+
+      # Négatif
+      AppleTV:                         { poids: -0.3, valeur_active: "playing" }
+
+
+  ENTRETIEN_CHAMBRE:
+    description: "Chambre — ménage"
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      # Primaires
+      Presence_chambre_etat:           { poids: 0.9, valeur_active: "actif" }
+      Presence_chambre_presence_piece: { poids: 0.7, valeur_active: true }
+
+      # Renforçant
+      Lux_exterieur:                   { poids: 0.4, seuil_min: 100 }
+
+      # Négatifs
+      Capteur_presence_sdb:            { poids: -0.3, valeur_active: true }   # en SDB = pas ménage chambre
+      AppleTV:                         { poids: -0.5, valeur_active: "playing" }
+      PC_HP:                           { poids: -0.4, valeur_active: "on" }
+
+
+  # ══════════════════════════════════════════
+  # SALON — états
+  # ══════════════════════════════════════════
+
+  REPOS_TV:
+    description: "Salon — visionnage TV"
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      # Primaires
+      Tele:                            { poids: 0.95, valeur_active: "playing" }
+      FP2_Salon:                       { poids: 0.8,  valeur_active: true }
+
+      # Renforçants
+      Ampli:                           { poids: 0.5, valeur_active: true }
+      Capteur_luminosite:              { poids: 0.3, seuil_max: 80 }
+
+      # Négatifs
+      PC_HP:                           { poids: -0.3, valeur_active: "on" }
+      Capteur_presence_sdb:            { poids: -0.4, valeur_active: true }   # en SDB = pas devant TV
+
+
+  SOMMEIL_SALON:
+    description: "Salon — endormi, TV éteinte ou allumée"
+    contraintes:
+      duree_min: 900
+
+    signaux:
+      # Primaire
+      FP2_Salon:                       { poids: 0.95, tendance: "nul" }
+
+      # Renforçants
+      Tele:                            { poids: 0.4 }
+      Ampli:                           { poids: -0.4, valeur_active: true }
+
+      # Contextuel
+      Capteur_luminosite:              { poids: 0.3, seuil_max: 20 }
+
+      # Négatif
+      Capteur_presence_sdb:            { poids: -0.5, valeur_active: true }   # en SDB = pas endormi salon
+
+
+  REPOS_MUSIQUE:
+    description: "Salon — écoute musicale"
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      # Primaires
+      Ampli:                           { poids: 0.95, valeur_active: true }
+      FP2_Salon:                       { poids: 0.7,  valeur_active: true }
+
+      # Renforçants
+      ESP32_Salon:                     { poids: 0.5, valeur_active: true }
+
+      # Négatifs
+      Tele:                            { poids: -0.5, valeur_active: "playing" }
+      PC_HP:                           { poids: -0.3, valeur_active: "on" }
+
+
+  SALON_REPAS:
+    description: "Salon — prise de repas"
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      # Primaire
+      FP2_Salon:                       { poids: 0.9, tendance: "modere" }
+
+      # Renforçants
+      ESP32_Salon:                     { poids: 0.4, valeur_active: true }
+
+      # Négatifs
+      Tele:                            { poids: -0.3, valeur_active: "playing" }
+      PC_HP:                           { poids: -0.5, valeur_active: "on" }
+
+
+  ECHANGE_SOCIAL:
+    description: "Salon — plusieurs personnes, échange"
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      # Primaires
+      FP2_Salon:                       { poids: 0.9,  valeur_active: true }
+      ESP32_Salon:                     { poids: 0.8,  valeur_active: true }
+      Presence_globale_multiple:       { poids: 0.95 }
+
+      # Contextuel
+      Ampli:                           { poids: 0.4, valeur_active: true }
+
+
+  ENTRETIEN_SALON:
+    description: "Salon — ménage"
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      # Primaire
+      FP2_Salon:                       { poids: 0.9, tendance: "rapide" }
+
+      # Renforçant
+      Lux_exterieur:                   { poids: 0.4, seuil_min: 100 }
+
+      # Négatifs
+      Tele:                            { poids: -0.6, valeur_active: "playing" }
+      Ampli:                           { poids: -0.4, valeur_active: true }
+
+
+  # ══════════════════════════════════════════
+  # BUREAU — états
+  # ══════════════════════════════════════════
+
+  ACTIF_BUREAU:
+    description: "Bureau — travail sur PC"
+    contraintes:
+      duree_min: 900
+
+    signaux:
+      # Primaires
+      PC_HP:                             { poids: 0.95, valeur_active: "on" }
+      Presence_bureau_etat:              { poids: 0.8,  valeur_active: "actif" }
+      Presence_bureau_presence_piece:    { poids: 0.7,  valeur_active: true }
+
+      # Renforçant — assis au bureau, pas sur le cliclac
+      Presence_bureau_presence_cliclac:  { poids: -0.3, valeur_active: true }
+
+      # Négatifs
+      Tele:                              { poids: -0.4, valeur_active: "playing" }
+
+
+  LECTURE_BUREAU:
+    description: "Bureau — lecture ou repos calme sur le cliclac"
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      # Primaires
+      Presence_bureau_presence_cliclac:  { poids: 0.9, valeur_active: true }
+      Presence_bureau_etat:              { poids: 0.7, valeur_active: "lit" }
+
+      # Négatif
+      PC_HP:                             { poids: -0.6, valeur_active: "on" }
+
+
+  PASSAGE_BUREAU:
+    description: "Bureau — passage rapide"
+    contraintes:
+      duree_max: 180
+
+    signaux:
+      # Primaires
+      Presence_bureau_presence_porte:    { poids: 0.9, valeur_active: true }
+      Presence_bureau_etat:              { poids: 0.7, valeur_active: "actif" }
+
+      # Négatifs
+      PC_HP:                             { poids: -0.8, valeur_active: "on" }
+      Presence_bureau_presence_cliclac:  { poids: -0.7, valeur_active: true }
+
+
+  ENTRETIEN_BUREAU:
+    description: "Bureau — ménage"
+    contraintes:
+      duree_min: 300
+
+    signaux:
+      # Primaires
+      Presence_bureau_etat:              { poids: 0.9, valeur_active: "actif" }
+      Presence_bureau_presence_piece:    { poids: 0.7, valeur_active: true }
+
+      # Négatifs
+      PC_HP:                             { poids: -0.7, valeur_active: "on" }
+      Presence_bureau_presence_cliclac:  { poids: -0.5, valeur_active: true }
+
+
+  # ══════════════════════════════════════════
+  # CUISINE — états
+  # ══════════════════════════════════════════
+
+  CUISINE_SNACK:
+    description: "Cuisine — passage rapide, snack"
+    contraintes:
+      duree_max: 300
+
+    signaux:
+      # Primaire
+      Capteur_presence_cuisine:        { poids: 0.9, valeur_active: true }
+
+      # Contextuel
+      Interrupteur_cuisine:            { poids: 0.4, valeur_active: true }
+
+
+  CUISINE_ACTIVITE:
+    description: "Cuisine — préparation repas, cuisson"
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      # Primaire
+      Capteur_presence_cuisine:        { poids: 0.95, valeur_active: true }
+
+      # Renforçant
+      Interrupteur_cuisine:            { poids: 0.6, valeur_active: true }
+
+
+  CUISINE_VAISSELLE:
+    description: "Cuisine — vaisselle ou rangement"
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      # Primaire
+      Capteur_presence_cuisine:        { poids: 0.95, valeur_active: true }
+
+      # Renforçant
+      Interrupteur_cuisine:            { poids: 0.6, valeur_active: true }
+
+      # Contextuel
+      Tele:                            { poids: 0.3 }                         # souvent allumée en fond
+
+
+  ENTRETIEN_CUISINE:
+    description: "Cuisine — ménage"
+    contraintes:
+      duree_min: 600
+
+    signaux:
+      # Primaire
+      Capteur_presence_cuisine:        { poids: 0.95, valeur_active: true }
+
+      # Renforçants
+      Interrupteur_cuisine:            { poids: 0.5, valeur_active: true }
+      Lux_exterieur:                   { poids: 0.3, seuil_min: 80 }
+
+
+  # ══════════════════════════════════════════
+  # SALLE DE BAIN — états
+  # ══════════════════════════════════════════
+
+  TRANSIT_SDB:
+    description: "SDB — passage ultra court, brossage dents, mains"
+    contraintes:
+      duree_max: 300              # max 5 min
+
+    signaux:
+      # Primaire
+      Capteur_presence_sdb:            { poids: 0.95, valeur_active: true }
+
+      # Contextuels — peut arriver à toute heure
+      Presence_chambre_presence_piece: { poids: 0.3, valeur_active: true }
+      Presence_bureau_presence_piece:  { poids: 0.3, valeur_active: true }
+
+
+  HYGIENE_SDB:
+    description: "SDB — douche, toilette standard"
+    contraintes:
+      duree_min: 300              # min 5 min
+      duree_max: 1200             # max 20 min
+
+    signaux:
+      # Primaire
+      Capteur_presence_sdb:            { poids: 0.95, valeur_active: true }
+
+      # Contextuel
+      Presence_chambre_presence_piece: { poids: 0.3, valeur_active: true }
+
+
+  PREPARATION_SDB:
+    description: "SDB — maquillage, coiffure, préparation sortie"
+    contraintes:
+      duree_min: 300              # min 5 min
+      contexte: matin
+
+    signaux:
+      # Primaire
+      Capteur_presence_sdb:            { poids: 0.95, valeur_active: true }
+
+      # Renforçants — matin + chambre vide = préparation sortie
+      Presence_chambre_presence_piece: { poids: 0.5,  valeur_active: false }
+      Lux_exterieur:                   { poids: 0.4,  seuil_min: 20 }
+
+      # Négatifs
+      Tele:                            { poids: -0.3, valeur_active: "playing" }
+
+
+  DETENTE_SDB:
+    description: "SDB — bain long, détente"
+    contraintes:
+      duree_min: 1200             # min 20 min
+
+    signaux:
+      # Primaire
+      Capteur_presence_sdb:            { poids: 0.95, valeur_active: true }
+
+      # Renforçants — soirée, ambiance calme
+      Lux_exterieur:                   { poids: 0.4, seuil_max: 30 }
+      Ampli:                           { poids: 0.4, valeur_active: true }    # musique = détente
+
+      # Négatifs
+      PC_HP:                           { poids: -0.5, valeur_active: "on" }
+      Tele:                            { poids: -0.3, valeur_active: "playing" }
+
+
+  # ══════════════════════════════════════════
+  # TRANSIT — couloir
+  # ══════════════════════════════════════════
+
+  TRANSIT_COULOIR:
+    description: "Couloir — déplacement entre pièces"
+    contraintes:
+      duree_max: 120              # max 2min dans le couloir
+
+    signaux:
+      # Primaire
+      FP2_Couloir:                     { poids: 0.95, valeur_active: true }
+
+      # Renforçant
+      Capteur_porte_entree:            { poids: 0.6, valeur_active: true }    # arrivée / départ

@@ -1,6 +1,5 @@
 import appdaemon.plugins.hass.hassapi as hass
 import yaml
-import json
 import os
 from datetime import datetime
 
@@ -21,10 +20,6 @@ class LieuResolver(hass.Hass):
         self.index_path = self.args.get(
             "index_path",
             "/config/index.yaml"
-        )
-        self.snapshot_path = self.args.get(
-            "snapshot_path",
-            "/config/appdaemon/apps/snapshot.json"
         )
         self.lieu_state_path = self.args.get(
             "lieu_state_path",
@@ -187,8 +182,8 @@ class LieuResolver(hass.Hass):
 
     def _load_snapshot(self):
         """
-        Lit le snapshot via signal_reader (API publique)
-        ou depuis le fichier si signal_reader indisponible.
+        Lit sensor.jarvis_signals en mémoire via signal_reader (API publique)
+        ou directement via get_state si signal_reader est indisponible.
         """
         try:
             return self.signal_reader.get_snapshot()
@@ -196,12 +191,10 @@ class LieuResolver(hass.Hass):
             pass
 
         try:
-            if os.path.exists(self.snapshot_path):
-                with open(self.snapshot_path, "r") as f:
-                    data = json.load(f)
-                    return data.get("signals", {})
+            raw = self.get_state("sensor.jarvis_signals", attribute="all") or {}
+            return raw.get("attributes", {})
         except Exception as e:
-            self.log(f"Erreur lecture snapshot : {e}", level="ERROR")
+            self.log(f"Erreur lecture sensor.jarvis_signals : {e}", level="ERROR")
 
         return {}
 

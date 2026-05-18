@@ -1,28 +1,77 @@
-signal_reader:
-  module: signal_reader
-  class: SignalReader
+# apps.yaml — AppDaemon JARVIS
+# Ordre de démarrage logique :
+#   1. person_repository  — annuaire des personnes (pas de dépendance)
+#   2. presence           — dépend de person_repository
+#   3. signal_reader      — dépend de presence
+#   4. device_map_reader  — indépendant, écrit vectors
+#   5. lieu_resolver      — dépend de signal_reader
+#   6. moteur_gemma       — consomme snapshot complet
+#   7. moteur_scoring     — consomme gemma_state + snapshot
 
-moteur_gemma:
-  module: moteur_gemma
-  class: MoteurGemma
-  entity_etat: input_text.gemma_etat_courant
+# ─────────────────────────────────────────────
+# Couche personnes
+# ─────────────────────────────────────────────
 
-moteur_scoring:
-  module: moteur_scoring
-  class: MoteurScoring
-  entity_etat: input_text.gemma_etat_courant
-  entity_meteo: weather.meteofrance_maison
-  entity_sun: sun.sun
-  temp_seuil_chaud: 22
+personn_repository:
+  module: personn_repository
+  class: PersonRepository
+
+# ─────────────────────────────────────────────
+# Couche présence
+# ─────────────────────────────────────────────
 
 presence:
   module: presence
   class: Presence
+  snapshot_path: /config/appdaemon/apps/snapshot.json
 
-person_repository:
-  module: person_repository
-  class: PersonRepository
+# ─────────────────────────────────────────────
+# Couche capteurs
+# ─────────────────────────────────────────────
 
-index_repository:
-  module: index_repository
-  class: IndexRepository
+signal_reader:
+  module: signal_reader
+  class: SignalReader
+  index_path:    /config/index.yaml
+  snapshot_path: /config/appdaemon/apps/snapshot.json
+
+device_map_reader:
+  module: device_map_reader
+  class: DeviceMapReader
+  device_map_path: /config/appdaemon/apps/device_map.yaml
+  snapshot_path:   /config/appdaemon/apps/snapshot.json
+
+# ─────────────────────────────────────────────
+# Couche déduction spatiale
+# ─────────────────────────────────────────────
+
+lieu_resolver:
+  module: lieu_resolver
+  class: LieuResolver
+  index_path:      /config/index.yaml
+  snapshot_path:   /config/appdaemon/apps/snapshot.json
+  lieu_state_path: /config/appdaemon/apps/lieu_state.json
+
+# ─────────────────────────────────────────────
+# Couche décision
+# ─────────────────────────────────────────────
+
+moteur_gemma:
+  module: moteur_gemma
+  class: MoteurGemma
+  snapshot_path:    /config/appdaemon/apps/snapshot.json
+  poids_path:       /config/appdaemon/apps/poids.yaml
+  gemma_state_path: /config/appdaemon/apps/gemma_state.json
+  entity_etat:      input_text.gemma_etat_courant
+
+moteur_scoring:
+  module: moteur_scoring
+  class: MoteurScoring
+  snapshot_path:    /config/appdaemon/apps/snapshot.json
+  gemma_state_path: /config/appdaemon/apps/gemma_state.json
+  index_path:       /config/index.yaml
+  comportements_path: /config/appdaemon/apps/comportements.yaml
+  entity_etat:      input_text.gemma_etat_courant
+  entity_meteo:     weather.meteofrance_maison
+  entity_sun:       sun.sun
+  temp_seuil_chaud: 22
