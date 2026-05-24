@@ -3,19 +3,12 @@ pieces:
     recepteurs:
       - device: CapteurMvtChambre
         id: Presence_chambre
-        entity: binary_sensor.capteur_mvt_chambre_presence
-        triggers:
-          # --- Présence globale pièce (Z1) ---
-          presence_piece:   binary_sensor.capteur_mvt_chambre_presence
-          mouvement:        binary_sensor.capteur_mvt_chambre_cible_en_mouvement
-          immobile:         binary_sensor.capteur_mvt_chambre_cible_immobile
-          nb_cibles:        sensor.capteur_mvt_chambre_nombre_de_cibles
-
-          # --- Zones logicielles ESPHome ---
-          presence_lit:   binary_sensor.capteur_mvt_chambre_presence_lit       # Z2 — occupancy
-          presence_porte: binary_sensor.capteur_mvt_chambre_presence_porte     # Z3 — occupancy
-
-          # --- Données vectorielles cibles ---
+        sorties:
+          presence_z1: binary_sensor.capteur_mvt_chambre_presence
+          presence_z2: binary_sensor.capteur_mvt_chambre_presence_lit
+          passage_z3:  binary_sensor.capteur_mvt_chambre_presence_porte
+        vecteurs:
+          nb_cibles:         sensor.capteur_mvt_chambre_nombre_de_cibles
           cible_1_vitesse:   sensor.capteur_mvt_chambre_cible_1_vitesse
           cible_1_direction: text_sensor.capteur_mvt_chambre_cible_1_direction
           cible_2_vitesse:   sensor.capteur_mvt_chambre_cible_2_vitesse
@@ -23,30 +16,16 @@ pieces:
           cible_3_vitesse:   sensor.capteur_mvt_chambre_cible_3_vitesse
           cible_3_direction: text_sensor.capteur_mvt_chambre_cible_3_direction
 
-        seuils:
-          vitesse_silence:  5    # cm/s — en dessous = immobile
-          stabilisation:    120  # secondes avant changement d'état
-          nb_cibles_delai:  30   # secondes avant propagation
-          timeout_lit:      60   # secondes delayed_off Z2 (miroir ESPHome)
-          timeout_porte:    5    # secondes delayed_off Z3 (miroir ESPHome)
-
   bureau:
     recepteurs:
       - device: CapteurMvtBureau
         id: Presence_bureau
-        entity: binary_sensor.capteur_mvt_bureau_presence
-        triggers:
-          # --- Présence globale pièce (Z1) ---
-          presence_piece:   binary_sensor.capteur_mvt_bureau_presence
-          mouvement:        binary_sensor.capteur_mvt_bureau_cible_en_mouvement
-          immobile:         binary_sensor.capteur_mvt_bureau_cible_immobile
-          nb_cibles:        sensor.capteur_mvt_bureau_nombre_de_cibles
-
-          # --- Zones logicielles ESPHome ---
-          presence_cliclac: binary_sensor.capteur_mvt_bureau_presence_cliclac  # Z2 — occupancy
-          presence_porte:   binary_sensor.capteur_mvt_bureau_presence_porte    # Z3 — occupancy
-
-          # --- Données vectorielles cibles ---
+        sorties:
+          presence_z1: binary_sensor.capteur_mvt_bureau_presence
+          presence_z2: binary_sensor.capteur_mvt_bureau_presence_cliclac
+          passage_z3:  binary_sensor.capteur_mvt_bureau_presence_porte
+        vecteurs:
+          nb_cibles:         sensor.capteur_mvt_bureau_nombre_de_cibles
           cible_1_vitesse:   sensor.capteur_mvt_bureau_cible_1_vitesse
           cible_1_direction: text_sensor.capteur_mvt_bureau_cible_1_direction
           cible_2_vitesse:   sensor.capteur_mvt_bureau_cible_2_vitesse
@@ -54,19 +33,33 @@ pieces:
           cible_3_vitesse:   sensor.capteur_mvt_bureau_cible_3_vitesse
           cible_3_direction: text_sensor.capteur_mvt_bureau_cible_3_direction
 
-        seuils:
-          vitesse_silence:  5    # cm/s — en dessous = immobile
-          stabilisation:    60   # secondes avant changement d'état
-          nb_cibles_delai:  15   # secondes avant propagation
-          timeout_cliclac:  60   # secondes delayed_off Z2 (miroir ESPHome)
-          timeout_porte:    5    # secondes delayed_off Z3 (miroir ESPHome)
-
   exterieur:
     recepteurs:
       - device: CapteurExterieur
         id: Meteo_locale
-        entity: sensor.capteur_ext_lumiere
-        triggers:
-          pluie: sensor.capteur_ext_pluie
+        mesures:
+          lumiere_mv: sensor.capteur_ext_lumiere
+          pluie_mv:   sensor.capteur_ext_pluie
         seuils:
-          lux_delta: 10          # variation minimale pour mise à jour
+          lux_conversion:  0.02276  # mV → lux
+          lux_seuil:       50       # lux — seuil besoin lumière
+          lux_hysterese:   10       # ±10 lux → zone morte 40-60 lux
+          pluie_seuil_mv:  200      # mV → au-dessus = il pleut
+        sorties:
+          pleut:          bool      # pluie_mv > pluie_seuil_mv
+          besoin_lumiere: bool      # lux < seuil (avec hystérésis)
+
+salon:
+    recepteurs:
+      - device: Television
+        id: Tele
+        sorties:
+          allumee:    media_player.65pus7304_12_2    # on/off direct
+        mesures:
+          etat_raw:   media_player.65pus7304_12_3    # playing/paused/idle
+        seuils:
+          valeur_active: "playing"
+          valeur_pause:  "paused"
+        sorties_derivees:
+          en_lecture: bool    # etat_raw == valeur_active
+          en_pause:   bool    # etat_raw == valeur_pause

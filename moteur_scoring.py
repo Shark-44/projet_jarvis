@@ -25,15 +25,15 @@ class MoteurScoring(hass.Hass):
     def initialize(self):
         self.comportements_path = self.args.get(
             "comportements_path",
-            "/config/appdaemon/apps/comportements.yaml"
+            "/homeassistant/comportements.yaml"
         )
         self.gemma_state_path = self.args.get(
             "gemma_state_path",
-            "/config/appdaemon/apps/gemma_state.json"
+            "/homeassistant/gemma_state.json"
         )
         self.entity_meteo = self.args.get(
             "entity_meteo",
-            "weather.meteofrance_maison"
+            "weather.frossay"
         )
         self.entity_sun = self.args.get(
             "entity_sun",
@@ -43,7 +43,7 @@ class MoteurScoring(hass.Hass):
             "temp_seuil_chaud", 22
         )
         self.index_path = self.args.get(
-            "index_path", "/config/index.yaml"
+            "index_path", "/homeassistant/index.yaml"
         )
 
         self.comportements    = self._load_comportements()

@@ -15,7 +15,7 @@ class SignalReader(hass.Hass):
     def initialize(self):
         self.index_path = self.args.get(
             "index_path",
-            "/config/index.yaml"
+            "/homeassistant/index.yaml"
         )
 
         self.index    = self._load_index()

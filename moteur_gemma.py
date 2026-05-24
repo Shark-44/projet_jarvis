@@ -1,24 +1,45 @@
 import appdaemon.plugins.hass.hassapi as hass
 import yaml
+import json
 import os
 from datetime import datetime
 
 
 class MoteurGemma(hass.Hass):
     """
-    Moteur GEMMA — Étape 3
-    Lit le snapshot.json produit par SignalReader et DeviceMapReader,
-    calcule le score de chaque état, et publie l'état courant.
+    Moteur GEMMA — v2
+    =================
+    Lit sensor.jarvis_signals (signal_reader.py)
+    et sensor.jarvis_vectors (device_map_reader.py),
+    calcule le score de chaque état défini dans poids.yaml,
+    et publie l'état courant.
+
+    Structure sensor.jarvis_vectors attendue (v2) :
+      {
+        "Presence_bureau": {
+          "piece":            "bureau",
+          "timestamp":        "...",
+          "sorties":          { "presence_z1": true, ... },
+          "sorties_derivees": { "en_lecture": false, ... },
+          "vecteurs":         { "cible_1_vitesse": 12.3, ... }
+        },
+        ...
+      }
+
+    Injection dans signals :
+      sorties          → {device_id}_{cle}         ex: Presence_bureau_presence_z1
+      sorties_derivees → {device_id}_{cle}         ex: Tele_en_lecture
+      vecteurs         → non injectés (futur moteur)
     """
 
     def initialize(self):
         self.poids_path = self.args.get(
             "poids_path",
-            "/config/appdaemon/apps/poids.yaml"
+            "/homeassistant/poids.yaml"
         )
         self.gemma_state_path = self.args.get(
             "gemma_state_path",
-            "/config/appdaemon/apps/gemma_state.json"
+            "/homeassistant/gemma_state.json"
         )
         self.entity_etat = self.args.get(
             "entity_etat",
@@ -31,7 +52,7 @@ class MoteurGemma(hass.Hass):
         # Réévaluation toutes les 30 secondes
         self.run_every(self._evaluer, "now", 30)
 
-        self.log("Moteur GEMMA initialisé")
+        self.log("Moteur GEMMA v2 initialise")
 
     # ─────────────────────────────────────────────
     # Chargement de la config
@@ -44,40 +65,60 @@ class MoteurGemma(hass.Hass):
         with open(self.poids_path, "r") as f:
             return yaml.safe_load(f) or {}
 
+    # ─────────────────────────────────────────────
+    # Lecture snapshot
+    # ─────────────────────────────────────────────
+
     def _load_snapshot(self):
         """
-        Lit les trois entités HA en mémoire et reconstruit
-        le dict signals fusionné utilisé par le scoring.
-        Remplace l'ancien json.load(snapshot.json).
+        Reconstruit le dict signals depuis les deux entités HA.
+
+        sensor.jarvis_signals → signals directs (signal_reader.py)
+        sensor.jarvis_vectors → sorties + sorties_derivees (device_map_reader.py)
+
+        Les vecteurs bruts ne sont PAS injectés — réservés au futur moteur.
+
+        Format de chaque entrée signals :
+          { "value": <valeur>, "piece": <piece>, "type": <type> }
         """
         signals = {}
 
-        # ── signals ────────────────────────────────────────────────
+        # ── 1. Signaux directs (signal_reader.py) ──────────────────
         try:
             raw = self.get_state("sensor.jarvis_signals", attribute="all") or {}
             signals.update(raw.get("attributes", {}))
         except Exception as e:
             self.log(f"Erreur lecture sensor.jarvis_signals : {e}", level="WARNING")
 
-        # ── vectors → injection dans signals ───────────────────────
+        # ── 2. Vectors (device_map_reader.py) ──────────────────────
         try:
             raw = self.get_state("sensor.jarvis_vectors", attribute="all") or {}
             vectors = raw.get("attributes", {})
+
             for device_id, vecteur in vectors.items():
                 if not isinstance(vecteur, dict):
                     continue
-                if vecteur.get("etat_derive"):
-                    signals[f"{device_id}_etat"] = {
-                        "value": vecteur.get("etat_derive"),
-                        "piece": vecteur.get("piece"),
-                        "type":  "etat_derive",
-                    }
-                for key, val in vecteur.get("valeurs", {}).items():
-                    signals[f"{device_id}_{key}"] = {
+
+                piece = vecteur.get("piece")
+
+                # sorties — binaires directs on/off
+                for cle, val in vecteur.get("sorties", {}).items():
+                    signals[f"{device_id}_{cle}"] = {
                         "value": val,
-                        "piece": vecteur.get("piece"),
-                        "type":  "vector",
+                        "piece": piece,
+                        "type":  "sortie",
                     }
+
+                # sorties_derivees — binaires calculés par device_map_reader
+                for cle, val in vecteur.get("sorties_derivees", {}).items():
+                    signals[f"{device_id}_{cle}"] = {
+                        "value": val,
+                        "piece": piece,
+                        "type":  "sortie_derivee",
+                    }
+
+                # vecteurs — NON injectés, futur moteur uniquement
+
         except Exception as e:
             self.log(f"Erreur lecture sensor.jarvis_vectors : {e}", level="WARNING")
 
@@ -89,6 +130,7 @@ class MoteurGemma(hass.Hass):
 
     def _evaluer(self, kwargs=None):
         signals = self._load_snapshot()
+        self.log(f"Signaux disponibles : {sorted(signals.keys())}")
         if not signals:
             return
 
@@ -100,6 +142,7 @@ class MoteurGemma(hass.Hass):
         scores = {}
         for nom_etat, config in etats.items():
             score = self._calculer_score(signals, config, modif)
+            self.log(f"  {nom_etat} → {round(score, 3)}")
             scores[nom_etat] = round(score, 3)
 
         scores_tries = sorted(scores.items(), key=lambda x: x[1], reverse=True)
@@ -117,6 +160,9 @@ class MoteurGemma(hass.Hass):
         """
         Score = Σ(contribution_signal) / Σ(poids_max_possibles)
         Normalisé entre 0 et 1.
+
+        Un signal absent ne contribue pas mais n'est pas pénalisé.
+        Un signal négatif (poids < 0) réduit le score si actif.
         """
         signaux_config = config_etat.get("signaux", {})
         if not signaux_config:
@@ -127,7 +173,7 @@ class MoteurGemma(hass.Hass):
 
         for signal_id, params in signaux_config.items():
             poids = params.get("poids", 0.5)
-            poids_total += poids
+            poids_total += abs(poids)
 
             valeur = self._lire_valeur(signals, signal_id)
             if valeur is None:
@@ -140,7 +186,7 @@ class MoteurGemma(hass.Hass):
             return 0.0
 
         score_brut = score_total / poids_total
-        return min(score_brut * modif_contexte, 1.0)
+        return min(max(score_brut * modif_contexte, 0.0), 1.0)
 
     def _lire_valeur(self, signals, signal_id):
         entry = signals.get(signal_id)
@@ -152,8 +198,8 @@ class MoteurGemma(hass.Hass):
         """
         Retourne 1.0 si le signal correspond au critère, 0.0 sinon.
           - valeur_active : correspondance exacte (bool ou string)
-          - seuil_max     : la valeur doit être <= seuil_max
-          - seuil_min     : la valeur doit être >= seuil_min
+          - seuil_max     : valeur <= seuil_max
+          - seuil_min     : valeur >= seuil_min
         """
         if "valeur_active" in params:
             attendu = params["valeur_active"]
@@ -163,13 +209,13 @@ class MoteurGemma(hass.Hass):
 
         if "seuil_max" in params:
             try:
-                return 1.0 if float(valeur) <= params["seuil_max"] else 0.0
+                return 1.0 if float(valeur) <= float(params["seuil_max"]) else 0.0
             except (TypeError, ValueError):
                 return 0.0
 
         if "seuil_min" in params:
             try:
-                return 1.0 if float(valeur) >= params["seuil_min"] else 0.0
+                return 1.0 if float(valeur) >= float(params["seuil_min"]) else 0.0
             except (TypeError, ValueError):
                 return 0.0
 
@@ -208,6 +254,7 @@ class MoteurGemma(hass.Hass):
             "modificateur": modif,
             "tous_scores":  tous_scores,
         }
+
         try:
             with open(self.gemma_state_path, "w") as f:
                 json.dump(sortie, f, ensure_ascii=False, indent=2)
