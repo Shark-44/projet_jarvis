@@ -29,8 +29,6 @@ class DeviceMapReader(hass.Hass):
 
     def initialize(self):
         # ── Vector engines par pièce LD2450 ───────────────────────
-        # piece_id = préfixe des clés dans le snapshot
-        # doit correspondre au device_id dans device_map.yaml
         self.vector_engines = {
             "Presence_chambre": RoomVectorEngine(
                 piece_id="Presence_chambre",
@@ -47,12 +45,25 @@ class DeviceMapReader(hass.Hass):
             "/homeassistant/device_map.yaml"
         )
         self._hysterese_cache = {}
-        self._vectors_cache   = {}
+        self._vectors_cache = {}
 
         self.device_map = self._load_device_map()
         if not self.device_map:
             self.log("device_map.yaml vide ou introuvable — abandon", level="ERROR")
             return
+
+        # Initialisation à blanc du cache pour CHAQUE device présent dans le YAML
+        # Évite que l'API publique (get_vectors) ne lève une erreur si HA appelle avant un événement
+        for _, device in self._iter_devices():
+            device_id = device.get("id")
+            if device_id:
+                self._vectors_cache[device_id] = {
+                    "piece": "",
+                    "timestamp": datetime.now().isoformat(),
+                    "sorties": {},
+                    "sorties_derivees": {},
+                    "vecteurs": {}
+                }
 
         self._subscribe_all()
         self._take_snapshot()
@@ -94,7 +105,7 @@ class DeviceMapReader(hass.Hass):
         for piece, device in self._iter_devices():
             device_id = device.get("id")
 
-            # Sorties directes — entités HA réelles uniquement
+            # Sorties directes
             for cle, entity_id in device.get("sorties", {}).items():
                 if isinstance(entity_id, str) and entity_id.startswith(
                     ("binary_sensor.", "media_player.", "sensor.", "switch.", "light.")
@@ -105,7 +116,7 @@ class DeviceMapReader(hass.Hass):
                     )
                     count += 1
 
-            # Mesures brutes — alimentent les sorties dérivées
+            # Mesures brutes
             for cle, entity_id in device.get("mesures", {}).items():
                 if isinstance(entity_id, str) and entity_id.startswith(
                     ("binary_sensor.", "media_player.", "sensor.", "switch.", "light.")
@@ -116,7 +127,7 @@ class DeviceMapReader(hass.Hass):
                     )
                     count += 1
 
-            # Vecteurs — alimentent vector_engine
+            # Vecteurs
             for cle, entity_id in device.get("vecteurs", {}).items():
                 if isinstance(entity_id, str) and entity_id.startswith(
                     ("binary_sensor.", "media_player.", "sensor.", "switch.", "light.")
@@ -142,13 +153,17 @@ class DeviceMapReader(hass.Hass):
     def _take_snapshot(self):
         for piece, device in self._iter_devices():
             device_id = device.get("id")
-            self._build_and_write_snapshot(device_id, piece, device)
+            if device_id:
+                self._build_and_write_snapshot(device_id, piece, device)
 
     # ─────────────────────────────────────────────
     # Construction snapshot d'un device
     # ─────────────────────────────────────────────
 
     def _build_and_write_snapshot(self, device_id, piece, device):
+        if not device_id:
+            return
+
         seuils = device.get("seuils", {})
 
         snapshot_device = {
@@ -160,7 +175,6 @@ class DeviceMapReader(hass.Hass):
         }
 
         # ── 1. Sorties directes ──────────────────────────────────────
-        # Entités HA binaires — lecture directe
         for cle, entity_id in device.get("sorties", {}).items():
             if not isinstance(entity_id, str):
                 continue
@@ -172,7 +186,6 @@ class DeviceMapReader(hass.Hass):
                 snapshot_device["sorties"][cle] = False
 
         # ── 2. Mesures brutes ────────────────────────────────────────
-        # Lecture des valeurs brutes pour calcul des sorties dérivées
         mesures_raw = {}
         for cle, entity_id in device.get("mesures", {}).items():
             if not isinstance(entity_id, str):
@@ -184,7 +197,6 @@ class DeviceMapReader(hass.Hass):
                 mesures_raw[cle] = None
 
         # ── 3. Sorties dérivées ──────────────────────────────────────
-        # Toutes les sorties calculées passent ici — pas de traitement spécial ailleurs
         for cle_sortie in device.get("sorties_derivees", {}).keys():
 
             if cle_sortie == "pleut":
@@ -213,7 +225,6 @@ class DeviceMapReader(hass.Hass):
                 )
 
         # ── 4. Vecteurs — lecture brute ──────────────────────────────
-        # Stockage des valeurs brutes LD2450 — pas de traitement ici
         for cle, entity_id in device.get("vecteurs", {}).items():
             if not isinstance(entity_id, str):
                 continue
@@ -223,8 +234,6 @@ class DeviceMapReader(hass.Hass):
                 snapshot_device["vecteurs"][cle] = None
 
         # ── 5. Vector engine ─────────────────────────────────────────
-        # Alimentation du buffer temporel et injection dans sorties_derivees
-        # Clés produites : {device_id}_toutes_statiques, _mouvement_local, etc.
         vector_engine = self.vector_engines.get(device_id)
         if vector_engine is not None:
             try:
@@ -249,13 +258,12 @@ class DeviceMapReader(hass.Hass):
     # ─────────────────────────────────────────────
 
     def _calc_immobile(self, device_id, device):
-        """still_target_count > 0 ET moving_target_count == 0"""
         try:
             still_entity  = device.get("vecteurs", {}).get("still_target_count")
             moving_entity = device.get("vecteurs", {}).get("moving_target_count")
             if not still_entity or not moving_entity:
                 return False
-            still  = int(float(self.get_state(still_entity)  or 0))
+            still  = int(float(self.get_state(still_entity) or 0))
             moving = int(float(self.get_state(moving_entity) or 0))
             return still > 0 and moving == 0
         except (TypeError, ValueError):
@@ -263,12 +271,16 @@ class DeviceMapReader(hass.Hass):
 
     def _calc_pleut(self, raw, seuils):
         try:
+            if raw is None:
+                return False
             return float(raw) > float(seuils.get("pluie_seuil_mv", 200))
         except (TypeError, ValueError):
             return False
 
     def _calc_besoin_lumiere(self, device_id, raw, seuils):
         try:
+            if raw is None:
+                return False
             lux       = float(raw) * float(seuils.get("lux_conversion", 0.02276))
             seuil     = float(seuils.get("lux_seuil", 50))
             hysterese = float(seuils.get("lux_hysterese", 10))
@@ -311,10 +323,11 @@ class DeviceMapReader(hass.Hass):
             return None
 
     # ─────────────────────────────────────────────
-    # Écriture dans HA
+    # Écriture dans HA / Cache interne
     # ─────────────────────────────────────────────
 
     def _write_snapshot(self, device_id, snapshot_device):
+        # Enregistrement direct et propre dans le cache local
         self._vectors_cache[device_id] = {
             "piece":            snapshot_device["piece"],
             "timestamp":        snapshot_device["timestamp"],
@@ -324,23 +337,27 @@ class DeviceMapReader(hass.Hass):
         }
 
         try:
+            # Construction d'un dictionnaire d'attributs isolé pour HA
+            # Évite d'injecter "unique_id" directement dans self._vectors_cache
+            attributes_ha = dict(self._vectors_cache)
+            attributes_ha["unique_id"] = "jarvis_vectors_sensor"
+
             self.set_state(
                 "sensor.jarvis_vectors",
                 state="ok",
-                attributes={
-                    **self._vectors_cache,
-                    "unique_id": "jarvis_vectors_sensor",
-                },
+                attributes=attributes_ha
             )
         except Exception as e:
             self.log(f"Erreur écriture sensor.jarvis_vectors : {e}", level="ERROR")
 
     # ─────────────────────────────────────────────
-    # API publique
+    # API publique (consommée par GEMMA)
     # ─────────────────────────────────────────────
 
     def get_vectors(self):
+        """Renvoie le dictionnaire complet du cache."""
         return self._vectors_cache
 
     def get_device(self, device_id):
+        """Renvoie les données spécifiques d'un appareil."""
         return self._vectors_cache.get(device_id)

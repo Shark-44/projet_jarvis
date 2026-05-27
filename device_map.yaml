@@ -1,88 +1,146 @@
+# ─────────────────────────────────────────────────────────────────
+# device_map.yaml
+# Cartographie des devices multi-entités — Projet JARVIS / GEMMA
+#
+# Structure par device :
+#   sorties          : entités binaires directes lues par device_map_reader
+#   mesures          : valeurs brutes pour calcul de sorties dérivées
+#   seuils           : paramètres de calcul appliqués par device_map_reader
+#   sorties_derivees : booléens calculés par device_map_reader
+#   vecteurs         : données brutes LD2450 transmises à vector_engine
+#
+# Responsabilités :
+#   device_map_reader → lit sorties, calcule sorties_derivees instantanées
+#   vector_engine     → consomme vecteurs x/y/vitesse, calcule grandeurs temporelles
+#   moteur_gemma      → consomme le snapshot produit, score les états
+# ─────────────────────────────────────────────────────────────────
+
 pieces:
+  # ══════════════════════════════════════════
+  # CHAMBRE
+  # ══════════════════════════════════════════
   chambre:
     recepteurs:
       - device: CapteurMvtChambre
         id: Presence_chambre
 
         # ── Sorties binaires directes ──────────────────────────────
+        # Zones calculées par l'ESP32 — aucun recalcul nécessaire
         sorties:
-          presence_piece:  binary_sensor.capteur_mvt_chambre_presence
-          sur_le_lit:      binary_sensor.capteur_mvt_chambre_presence_lit
-          passage_porte:   binary_sensor.capteur_mvt_chambre_presence_porte
-
-        # ── Vecteurs bruts — transmis au moteur vectoriel ──────────
-        # Le moteur vectoriel consomme ces données pour produire
-        # des grandeurs temporelles (dérive position, tendance vitesse)
-        vecteurs:
-          nb_cibles:         sensor.capteur_mvt_chambre_nombre_de_cibles
-          cible_1_vitesse:   sensor.capteur_mvt_chambre_cible_1_vitesse
-          cible_1_direction: text_sensor.capteur_mvt_chambre_cible_1_direction
-          cible_2_vitesse:   sensor.capteur_mvt_chambre_cible_2_vitesse
-          cible_2_direction: text_sensor.capteur_mvt_chambre_cible_2_direction
-          cible_3_vitesse:   sensor.capteur_mvt_chambre_cible_3_vitesse
-          cible_3_direction: text_sensor.capteur_mvt_chambre_cible_3_direction
-          # cible_1_distance: sensor.capteur_mvt_chambre_cible_1_distance  # à venir ESPHome
-          # cible_2_distance: sensor.capteur_mvt_chambre_cible_2_distance
-          # cible_3_distance: sensor.capteur_mvt_chambre_cible_3_distance
+          presence_piece: binary_sensor.capteur_mvt_chambre_presence # Z1 — pièce entière
+          sur_le_lit: binary_sensor.capteur_mvt_chambre_presence_lit # Z2 — zone lit
+          passage_porte: binary_sensor.capteur_mvt_chambre_presence_porte # Z3 — zone porte
 
         # ── Seuils — appliqués par device_map_reader ───────────────
         seuils:
-          vitesse_zone_morte: 0.10    # m/s — en dessous = immobile (respiration, micro-mvt)
+          vitesse_zone_morte: 0.10 # m/s — en dessous = immobile
 
-        # ── Sorties dérivées — calculées par device_map_reader ─────
-        # Basées sur snapshot instantané uniquement
-        # Les calculs temporels (dérive, intégrale) → moteur vectoriel
+        # ── Sorties dérivées instantanées ──────────────────────────
+        # Calculées par device_map_reader sur snapshot instantané
+        # Les calculs temporels (variance, kinetic) → vector_engine
         sorties_derivees:
-          immobile: bool    # toutes cibles actives dans zone morte vitesse
+          immobile: bool # moving_target_count == 0 ET still_target_count > 0
 
+        # ── Vecteurs bruts → vector_engine ────────────────────────
+        # Coordonnées cartésiennes x/y exposées par ESPHome
+        # Transmises à RoomVectorEngine.push() à chaque mise à jour
+        vecteurs:
+          cible_1_x: sensor.capteur_mvt_chambre_cible_1_x
+          cible_1_y: sensor.capteur_mvt_chambre_cible_1_y
+          cible_1_vitesse: sensor.capteur_mvt_chambre_cible_1_vitesse
+          cible_2_x: sensor.capteur_mvt_chambre_cible_2_x
+          cible_2_y: sensor.capteur_mvt_chambre_cible_2_y
+          cible_2_vitesse: sensor.capteur_mvt_chambre_cible_2_vitesse
+          cible_3_x: sensor.capteur_mvt_chambre_cible_3_x
+          cible_3_y: sensor.capteur_mvt_chambre_cible_3_y
+          cible_3_vitesse: sensor.capteur_mvt_chambre_cible_3_vitesse
+          # Natifs LD2450 — utilisés pour immobile
+          still_target_count: sensor.capteur_mvt_chambre_cibles_immobiles
+          moving_target_count: sensor.capteur_mvt_chambre_cibles_en_mouvement
+
+  # ══════════════════════════════════════════
+  # BUREAU
+  # ══════════════════════════════════════════
   bureau:
     recepteurs:
       - device: CapteurMvtBureau
         id: Presence_bureau
-        sorties:
-          presence_piece:  binary_sensor.capteur_mvt_bureau_presence
-          sur_cliclac:     binary_sensor.capteur_mvt_bureau_presence_cliclac
-          passage_porte:   binary_sensor.capteur_mvt_bureau_presence_porte
-        vecteurs:
-          nb_cibles:         sensor.capteur_mvt_bureau_nombre_de_cibles
-          cible_1_vitesse:   sensor.capteur_mvt_bureau_cible_1_vitesse
-          cible_1_direction: text_sensor.capteur_mvt_bureau_cible_1_direction
-          cible_2_vitesse:   sensor.capteur_mvt_bureau_cible_2_vitesse
-          cible_2_direction: text_sensor.capteur_mvt_bureau_cible_2_direction
-          cible_3_vitesse:   sensor.capteur_mvt_bureau_cible_3_vitesse
-          cible_3_direction: text_sensor.capteur_mvt_bureau_cible_3_direction
-        seuils:
-          vitesse_zone_morte: 0.10    # m/s — en dessous = immobile
-        sorties_derivees:
-          immobile: bool    # toutes cibles actives dans zone morte vitesse
 
+        # ── Sorties binaires directes ──────────────────────────────
+        sorties:
+          presence_piece: binary_sensor.capteur_mvt_bureau_presence # Z1 — pièce entière
+          sur_cliclac: binary_sensor.capteur_mvt_bureau_presence_cliclac # Z2 — zone cliclac
+          passage_porte: binary_sensor.capteur_mvt_bureau_presence_porte # Z3 — zone porte
+
+        # ── Seuils ─────────────────────────────────────────────────
+        seuils:
+          vitesse_zone_morte: 0.10 # m/s
+
+        # ── Sorties dérivées instantanées ──────────────────────────
+        sorties_derivees:
+          immobile: bool # moving_target_count == 0 ET still_target_count > 0
+
+        # ── Vecteurs bruts → vector_engine ────────────────────────
+        vecteurs:
+          cible_1_x: sensor.capteur_mvt_bureau_cible_1_x
+          cible_1_y: sensor.capteur_mvt_bureau_cible_1_y
+          cible_1_vitesse: sensor.capteur_mvt_bureau_cible_1_vitesse
+          cible_2_x: sensor.capteur_mvt_bureau_cible_2_x
+          cible_2_y: sensor.capteur_mvt_bureau_cible_2_y
+          cible_2_vitesse: sensor.capteur_mvt_bureau_cible_2_vitesse
+          cible_3_x: sensor.capteur_mvt_bureau_cible_3_x
+          cible_3_y: sensor.capteur_mvt_bureau_cible_3_y
+          cible_3_vitesse: sensor.capteur_mvt_bureau_cible_3_vitesse
+          still_target_count: sensor.capteur_mvt_bureau_cibles_immobiles
+          moving_target_count: sensor.capteur_mvt_bureau_cibles_en_mouvement
+
+  # ══════════════════════════════════════════
+  # EXTÉRIEUR
+  # ══════════════════════════════════════════
   exterieur:
     recepteurs:
       - device: CapteurExterieur
         id: Meteo_locale
+
+        # ── Mesures brutes ─────────────────────────────────────────
         mesures:
           lumiere_mv: sensor.capteur_ext_lumiere
-          pluie_mv:   sensor.capteur_ext_pluie
-        seuils:
-          lux_conversion:  0.02276  # mV → lux
-          lux_seuil:       50       # lux — seuil besoin lumière
-          lux_hysterese:   10       # ±10 lux → zone morte 40-60 lux
-          pluie_seuil_mv:  200      # mV → au-dessus = il pleut
-        sorties:
-          pleut:          bool      # pluie_mv > pluie_seuil_mv
-          besoin_lumiere: bool      # lux < seuil (avec hystérésis)
+          pluie_mv: sensor.capteur_ext_pluie
 
+        # ── Seuils ─────────────────────────────────────────────────
+        seuils:
+          lux_conversion: 0.02276 # mV → lux
+          lux_seuil: 50 # lux — seuil besoin lumière
+          lux_hysterese: 10 # ±10 lux → zone morte 40-60 lux
+          pluie_seuil_mv: 200 # mV → au-dessus = il pleut
+
+        # ── Sorties dérivées ───────────────────────────────────────
+        sorties_derivees:
+          pleut: bool # pluie_mv > pluie_seuil_mv
+          besoin_lumiere: bool # lux < seuil (avec hystérésis)
+
+  # ══════════════════════════════════════════
+  # SALON
+  # ══════════════════════════════════════════
   salon:
     recepteurs:
       - device: Television
         id: Tele
+
+        # ── Sorties binaires directes ──────────────────────────────
         sorties:
-          allumee:    media_player.65pus7304_12_2    # on/off direct
+          allumee: media_player.65pus7304_12_2 # on/off
+
+        # ── Mesures brutes ─────────────────────────────────────────
         mesures:
-          etat_raw:   media_player.65pus7304_12_3    # playing/paused/idle
+          etat_raw: media_player.65pus7304_12_3 # playing/paused/idle
+
+        # ── Seuils ─────────────────────────────────────────────────
         seuils:
           valeur_active: "playing"
-          valeur_pause:  "paused"
+          valeur_pause: "paused"
+
+        # ── Sorties dérivées ───────────────────────────────────────
         sorties_derivees:
-          en_lecture: bool    # etat_raw == valeur_active
-          en_pause:   bool    # etat_raw == valeur_pause
+          en_lecture: bool # etat_raw == "playing"
+          en_pause: bool # etat_raw == "paused"

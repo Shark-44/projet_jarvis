@@ -1,204 +1,416 @@
-# comportements.yaml
+# comportements.yaml — v4.0
+# ══════════════════════════════════════════════════════════════════
 #
-# But :
-# Déterminer l'ambiance lumineuse suivant :
-#   - Etat humain (sommeil, travail, TV…)
-#   - Luminosité extérieure
-#   - Météo (impact psychologique/confort)
+# Table d'application : état GEMMA × condition environnementale locale → actionneurs
 #
-# Principe :
-# La météo seule n'allume jamais une lumière.
-# C'est surtout JOUR / NUIT qui décide.
-# La pluie ou ciel couvert augmente légèrement la luminosité intérieure.
-
-conditions:
-
-  jour_ensoleille:
-    # Soleil présent + forte luminosité naturelle
-    # → presque aucune lumière nécessaire
-    soleil: above_horizon
-    meteo: sunny
-
-  jour_couvert:
-    # Jour mais lumière extérieure réduite
-    soleil: above_horizon
-    meteo:
-      - cloudy
-      - partlycloudy
-
-  jour_pluie:
-    # Jour sombre → besoin de compensation
-    soleil: above_horizon
-    meteo:
-      - rainy
-      - pouring
-
-  nuit:
-    # Nuit = soleil sous horizon
-    soleil: below_horizon
-
-
-# --------------------------------------------------
-# COMPORTEMENTS
-# --------------------------------------------------
+# Consommé par : moteur_scoring.py v2.0
+# Produit par  : moteur_gemma.py v3.0   (un état par personne présente)
+#
+# Clés environnementales issues des capteurs physiques de jarvis_vectors :
+#   nuit   — sun.sun = below_horizon (Priorité absolue, lux/pluie ignorés)
+#   pluie  — Vérifié en temps réel par le capteur extérieur (Priorité 2)
+#   sombre — Ciel couvert / faible luminosité détecté par le luxmètre
+#   soleil — Temps clair et lumineux (Pas besoin de compensation forcée)
+#
+# Valeurs actionneurs :
+#   0        — éteint (turn_off)
+#   1 … 255  — allumé à cette luminosité (turn_on brightness=N)
+#   true/false — switch on/off (Interrupteur_Eclairage_Cuisine)
+#
+# Échelle de référence :
+#   0   = éteint
+#   20  = veilleuse / orientation nocturne
+#   60  = ambiance douce / fond
+#   120 = confort lecture / repas
+#   180 = travail / cuisine active
+#   255 = maximum / entretien
+#
+# L'état ABSENT n'est plus traité ici : il est intercepté directement
+# par le code Python pour un "turn_off" général instantané.
+# ══════════════════════════════════════════════════════════════════
 
 etats:
-
-# ==================================================
-# SOMMEIL
-# ==================================================
+  # ════════════════════════════════════════════
+  # CHAMBRE — sommeil / repos
+  # ════════════════════════════════════════════
 
   SOMMEIL:
-
-    # Dormir = obscurité totale
-    jour_ensoleille:
+    # Obscurité totale demandée — l'environnement n'a aucun impact
+    soleil:
       Eclairage_Chambre: 0
       Chevet_Chambre: 0
-
-    jour_couvert:
+    sombre:
       Eclairage_Chambre: 0
       Chevet_Chambre: 0
-
-    jour_pluie:
+    pluie:
       Eclairage_Chambre: 0
       Chevet_Chambre: 0
-
     nuit:
       Eclairage_Chambre: 0
       Chevet_Chambre: 0
 
-    reveil_nocturne:
-      # Cas particulier :
-      # déplacement WC / eau
-      # éviter choc lumineux
+  LECTURE_LIT:
+    # Sur le lit, actif — lumière douce côté chevet, compensation si sombre/pluie
+    soleil:
+      Eclairage_Chambre: 0
+      Chevet_Chambre: 80
+    sombre:
+      Eclairage_Chambre: 40
+      Chevet_Chambre: 120
+    pluie:
+      Eclairage_Chambre: 60
+      Chevet_Chambre: 140
+    nuit:
+      Eclairage_Chambre: 0
+      Chevet_Chambre: 80
+
+  INSOMNIE:
+    # Nuit longue active sur le lit — très tamisé pour préserver les yeux
+    soleil:
+      Eclairage_Chambre: 0
+      Chevet_Chambre: 40
+    sombre:
+      Eclairage_Chambre: 0
+      Chevet_Chambre: 40
+    pluie:
+      Eclairage_Chambre: 0
+      Chevet_Chambre: 40
+    nuit:
+      Eclairage_Chambre: 0
+      Chevet_Chambre: 40
+
+  REVEIL_PHYSIOLOGIQUE:
+    # Déplacement nocturne ou diurne court — orientation sans choc visuel
+    soleil:
       Chevet_Chambre: 20
-      Couloir: 15
+    sombre:
+      Chevet_Chambre: 20
+    pluie:
+      Chevet_Chambre: 20
+    nuit:
+      Chevet_Chambre: 20
 
+  REVEIL_ROUTINE:
+    # Réveil du matin — montée progressive selon la clarté extérieure
+    soleil:
+      Eclairage_Chambre: 60
+      Chevet_Chambre: 80
+    sombre:
+      Eclairage_Chambre: 100
+      Chevet_Chambre: 120
+    pluie:
+      Eclairage_Chambre: 120
+      Chevet_Chambre: 140
+    nuit:
+      Eclairage_Chambre: 60
+      Chevet_Chambre: 80
 
-# ==================================================
-# TV / FILM
-# ==================================================
+  HABILLAGE:
+    # Préparation hors du lit — lumière fonctionnelle adaptée
+    soleil:
+      Eclairage_Chambre: 120
+      Chevet_Chambre: 0
+    sombre:
+      Eclairage_Chambre: 180
+      Chevet_Chambre: 0
+    pluie:
+      Eclairage_Chambre: 200
+      Chevet_Chambre: 0
+    nuit:
+      Eclairage_Chambre: 140
+      Chevet_Chambre: 0
+
+  ENTRETIEN_CHAMBRE:
+    # Visibilité maximale requise pour entretien
+    soleil:
+      Eclairage_Chambre: 255
+      Chevet_Chambre: 0
+    sombre:
+      Eclairage_Chambre: 255
+      Chevet_Chambre: 0
+    pluie:
+      Eclairage_Chambre: 255
+      Chevet_Chambre: 0
+    nuit:
+      Eclairage_Chambre: 255
+      Chevet_Chambre: 0
+
+  # ════════════════════════════════════════════
+  # SALON — TV / musique / repas / social
+  # ════════════════════════════════════════════
 
   REPOS_TV:
-
-    jour_ensoleille:
-      # Lumière naturelle suffisante
-      Eclairage_Salon_tv: 0
-      Wled_Salon: 0
-
-    jour_couvert:
-      # Compensation légère
+    # Ambiance cinéma — compensation légère si le ciel s'assombrit ou s'il pleut
+    soleil:
       Eclairage_Salon_tv: 40
+      Eclairage_Salon_table: 0
       Wled_Salon: 30
-
-    jour_pluie:
-      # Ambiance plus confortable
+      Spot_Ambiance: 0
+    sombre:
       Eclairage_Salon_tv: 60
+      Eclairage_Salon_table: 20
       Wled_Salon: 50
-
+      Spot_Ambiance: 30
+    pluie:
+      Eclairage_Salon_tv: 70
+      Eclairage_Salon_table: 30
+      Wled_Salon: 60
+      Spot_Ambiance: 40
     nuit:
-      # Réduction fatigue visuelle
-      Eclairage_Salon_tv: 40
-      Wled_Salon: 30
+      Eclairage_Salon_tv: 50
+      Eclairage_Salon_table: 0
+      Wled_Salon: 40
       Spot_Ambiance: 20
 
-
-# ==================================================
-# MUSIQUE / DETENTE
-# ==================================================
+  SOMMEIL_SALON:
+    # Endormissement détecté devant la TV — extinction générale progressive
+    soleil:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 0
+      Wled_Salon: 0
+      Spot_Ambiance: 0
+    sombre:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 0
+      Wled_Salon: 0
+      Spot_Ambiance: 0
+    pluie:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 0
+      Wled_Salon: 0
+      Spot_Ambiance: 0
+    nuit:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 0
+      Wled_Salon: 0
+      Spot_Ambiance: 0
 
   REPOS_MUSIQUE:
-
-    jour_ensoleille:
-      Spot_Ambiance: 0
-      Wled_Salon: 20
-
-    jour_couvert:
-      Spot_Ambiance: 50
-      Wled_Salon: 70
-
-    jour_pluie:
-      # météo sombre = ambiance chaleureuse
-      Spot_Ambiance: 70
-      Wled_Salon: 90
-
-    nuit:
-      Spot_Ambiance: 80
+    # Ambiance relaxante / cocooning renforcée en cas de pluie locale
+    soleil:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 40
+      Wled_Salon: 80
+      Spot_Ambiance: 60
+    sombre:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 60
       Wled_Salon: 100
-
-
-# ==================================================
-# REPAS / CUISINE
-# ==================================================
-
-  NUTRITIF:
-
-    jour_ensoleille:
-      Interrupteur_Cuisine: false
-
-    jour_couvert:
-      Interrupteur_Cuisine: true
-
-    jour_pluie:
-      Interrupteur_Cuisine: true
-
+      Spot_Ambiance: 80
+    pluie:
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 70
+      Wled_Salon: 120
+      Spot_Ambiance: 90
     nuit:
-      Interrupteur_Cuisine: true
+      Eclairage_Salon_tv: 0
+      Eclairage_Salon_table: 40
+      Wled_Salon: 100
+      Spot_Ambiance: 80
+
+  SALON_REPAS:
+    # Table à manger active + retour lumineux vers la cuisine
+    soleil:
+      Eclairage_Salon_table: 120
+      Eclairage_Salon_tv: 0
+      Wled_Salon: 40
+      Interrupteur_Eclairage_Cuisine: true
+    sombre:
+      Eclairage_Salon_table: 160
+      Eclairage_Salon_tv: 0
+      Wled_Salon: 60
+      Interrupteur_Eclairage_Cuisine: true
+    pluie:
+      Eclairage_Salon_table: 180
+      Eclairage_Salon_tv: 0
+      Wled_Salon: 70
+      Interrupteur_Eclairage_Cuisine: true
+    nuit:
+      Eclairage_Salon_table: 140
+      Eclairage_Salon_tv: 0
+      Wled_Salon: 50
+      Interrupteur_Eclairage_Cuisine: true
+
+  ECHANGE_SOCIAL:
+    # Présence de plusieurs humains — espace de vie bien éclairé et chaleureux
+    soleil:
+      Eclairage_Salon_tv: 60
       Eclairage_Salon_table: 100
+      Wled_Salon: 80
+      Spot_Ambiance: 60
+    sombre:
+      Eclairage_Salon_tv: 80
+      Eclairage_Salon_table: 140
+      Wled_Salon: 100
+      Spot_Ambiance: 80
+    pluie:
+      Eclairage_Salon_tv: 90
+      Eclairage_Salon_table: 160
+      Wled_Salon: 120
+      Spot_Ambiance: 90
+    nuit:
+      Eclairage_Salon_tv: 60
+      Eclairage_Salon_table: 120
+      Wled_Salon: 100
+      Spot_Ambiance: 80
 
+  ENTRETIEN_SALON:
+    # Mode nettoyage général à pleine puissance
+    soleil:
+      Eclairage_Salon_tv: 255
+      Eclairage_Salon_table: 255
+      Wled_Salon: 0
+      Spot_Ambiance: 0
+    sombre:
+      Eclairage_Salon_tv: 255
+      Eclairage_Salon_table: 255
+      Wled_Salon: 0
+      Spot_Ambiance: 0
+    pluie:
+      Eclairage_Salon_tv: 255
+      Eclairage_Salon_table: 255
+      Wled_Salon: 0
+      Spot_Ambiance: 0
+    nuit:
+      Eclairage_Salon_tv: 255
+      Eclairage_Salon_table: 255
+      Wled_Salon: 0
+      Spot_Ambiance: 0
 
-# ==================================================
-# BUREAU / PC
-# ==================================================
+  # ════════════════════════════════════════════
+  # BUREAU — travail / lecture / entretien
+  # ════════════════════════════════════════════
 
   ACTIF_BUREAU:
-
-    jour_ensoleille:
-      # lumière naturelle
-      Eclairage_bureau: 80
-
-    jour_couvert:
+    # Écrans et plan de travail — le luxmètre extérieur ajuste finement la puissance
+    soleil:
       Eclairage_bureau: 160
       Spot_bureau: 100
-
-    jour_pluie:
+    sombre:
       Eclairage_bureau: 200
       Spot_bureau: 140
-
+    pluie:
+      Eclairage_bureau: 220
+      Spot_bureau: 160
     nuit:
-      # Travail écran → lumière indirecte
       Eclairage_bureau: 180
       Spot_bureau: 120
 
+  LECTURE_BUREAU:
+    # Concentration sur papier — éclairage doux ciblé
+    soleil:
+      Eclairage_bureau: 80
+      Spot_bureau: 60
+    sombre:
+      Eclairage_bureau: 120
+      Spot_bureau: 100
+    pluie:
+      Eclairage_bureau: 140
+      Spot_bureau: 120
+    nuit:
+      Eclairage_bureau: 100
+      Spot_bureau: 80
 
-# ==================================================
-# MENAGE / ENTRETIEN
-# ==================================================
-
-  ENTRETIEN:
-
-    default:
-      # L'entretien privilégie visibilité
+  ENTRETIEN_BUREAU:
+    soleil:
       Eclairage_bureau: 255
-      Eclairage_Salon_tv: 255
-      Eclairage_Salon_table: 255
       Spot_bureau: 255
-      Interrupteur_Cuisine: true
+    sombre:
+      Eclairage_bureau: 255
+      Spot_bureau: 255
+    pluie:
+      Eclairage_bureau: 255
+      Spot_bureau: 255
+    nuit:
+      Eclairage_bureau: 255
+      Spot_bureau: 255
 
+  # ════════════════════════════════════════════
+  # CUISINE — snack / activité
+  # ════════════════════════════════════════════
 
-# ==================================================
-# ABSENCE
-# ==================================================
+  CUISINE_SNACK:
+    # Passage express (boire un verre, ouvrir le frigo)
+    soleil:
+      Interrupteur_Eclairage_Cuisine: false
+    sombre:
+      Interrupteur_Eclairage_Cuisine: true
+    pluie:
+      Interrupteur_Eclairage_Cuisine: true
+    nuit:
+      Interrupteur_Eclairage_Cuisine: true
 
-  ABSENT:
+  CUISINE_ACTIVITE:
+    # Préparation d'un repas — éclaire la cuisine et ajoute un fond sur la table à manger
+    soleil:
+      Interrupteur_Eclairage_Cuisine: false
+      Eclairage_Salon_table: 0
+    sombre:
+      Interrupteur_Eclairage_Cuisine: true
+      Eclairage_Salon_table: 40
+    pluie:
+      Interrupteur_Eclairage_Cuisine: true
+      Eclairage_Salon_table: 60
+    nuit:
+      Interrupteur_Eclairage_Cuisine: true
+      Eclairage_Salon_table: 40
 
-    default:
+  # ════════════════════════════════════════════
+  # SALLE DE BAIN — transit / hygiène / détente
+  # ════════════════════════════════════════════
 
-      # Sécurité énergétique
-      Eclairage_bureau: 0
-      Eclairage_Chambre: 0
-      Eclairage_Salon_tv: 0
-      Wled_Salon: 0
-      Cuisine: false
+  TRANSIT_SDB:
+    soleil:
+      Eclairage_SDB: 120
+    sombre:
+      Eclairage_SDB: 140
+    pluie:
+      Eclairage_SDB: 140
+    nuit:
+      Eclairage_SDB: 40
 
-      # sauf simulation présence éventuelle
+  HYGIENE_SDB:
+    soleil:
+      Eclairage_SDB: 180
+    sombre:
+      Eclairage_SDB: 200
+    pluie:
+      Eclairage_SDB: 220
+    nuit:
+      Eclairage_SDB: 180
+
+  PREPARATION_SDB:
+    # Rendu lumineux neutre et maximal (miroir, rasage, coiffure)
+    soleil:
+      Eclairage_SDB: 220
+    sombre:
+      Eclairage_SDB: 240
+    pluie:
+      Eclairage_SDB: 240
+    nuit:
+      Eclairage_SDB: 220
+
+  DETENTE_SDB:
+    # Mode bain long ou relaxation — ambiance reposante
+    soleil:
+      Eclairage_SDB: 60
+    sombre:
+      Eclairage_SDB: 80
+    pluie:
+      Eclairage_SDB: 80
+    nuit:
+      Eclairage_SDB: 60
+
+  # ════════════════════════════════════════════
+  # TRANSIT COULOIR
+  # ════════════════════════════════════════════
+
+  TRANSIT_COULOIR:
+    soleil:
+      Eclairage_Couloir: 80
+    sombre:
+      Eclairage_Couloir: 100
+    pluie:
+      Eclairage_Couloir: 100
+    nuit:
+      Eclairage_Couloir: 30

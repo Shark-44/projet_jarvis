@@ -215,23 +215,7 @@ class TargetTrack:
 
     # ── Observation ──────────────────────────
 
-    def observation_log(self, label: str):
-        """
-        Logguer les valeurs brutes pour calibration terrain.
-        Activer RoomVectorEngine(observation_mode=True) pendant
-        une session réelle pour mesurer les distributions.
-        """
-        logger.info(
-            "[OBS] %s | pts=%d | var=%.6f | kinetic=%.4f | "
-            "static=%s local=%s moving=%s",
-            label,
-            self.nb_points,
-            self.variance_position,
-            self.kinetic_integral,
-            self.is_static,
-            self.is_local,
-            self.is_moving,
-        )
+
 
 
 # ─────────────────────────────────────────────
@@ -246,7 +230,7 @@ class RoomVectorEngine:
         # Initialisation (une fois dans initialize())
         self.vector_chambre = RoomVectorEngine(
             piece_id="Presence_chambre",
-            observation_mode=True    # True pendant calibration
+            observation_mode=False    # True pendant calibration
         )
 
         # À chaque callback de mise à jour des capteurs
@@ -278,10 +262,7 @@ class RoomVectorEngine:
 
         self.cibles[cible_id].push_point(x, y, vitesse)
 
-        if self.observation_mode:
-            self.cibles[cible_id].observation_log(
-                f"{self.piece_id}/{cible_id}"
-            )
+
 
     def _actives(self) -> list[TargetTrack]:
         """Cibles avec suffisamment de points dans la fenêtre."""
