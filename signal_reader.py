@@ -203,19 +203,16 @@ class SignalReader(hass.Hass):
 
     def _normalize(self, kind, entity, raw):
         """
-        Transforme l'état brut en valeur normalisée.
-        - binary_sensor / switch → True / False
-        - media_player           → "playing" | "idle" | "off"
-        - sensor lux             → float (valeur brute conservée)
-        - light                  → True / False
+        Transforme l'état brut en valeur normalisée logique.
+        - binary_sensor / switch / light → True / False (gère le 'on' de HA)
+        - media_player                  → état string brut ("playing", "off", etc.)
+        - sensor                        → float (numérique) ou valeur brute
         """
         if raw in (None, "unavailable", "unknown"):
             return None
 
-        if kind in ("binary_sensor", "switch"):
-            return raw == "on"
-
-        if kind == "light":
+        # Normalisation des états HA "on"/"off" en vrais booléens logiques
+        if kind in ("binary_sensor", "switch", "light"):
             return raw == "on"
 
         if kind == "media_player":
@@ -223,7 +220,7 @@ class SignalReader(hass.Hass):
 
         if kind == "sensor":
             try:
-                return float(raw)   # lux → float brut conservé
+                return float(raw)   # Tente de convertir en numérique (ex: lux)
             except (ValueError, TypeError):
                 return raw
 
@@ -231,39 +228,42 @@ class SignalReader(hass.Hass):
 
     def _write_snapshot(self):
         """
-        Écrit la section signals dans l'entité HA sensor.jarvis_signals.
-        Pas de fichier disque — écriture mémoire native AppDaemon.
+        Écrit le snapshot complet dans l'entité HA sensor.jarvis_signals.
+        Ajoute un attribut plat 'values' pour faciliter la lecture directe par le MoteurGemma.
         """
         try:
+            # Génération d'un dictionnaire plat "ID: Valeur_Normalisée" 
+            # Exemple : {"Capteur_presence_cuisine": True, "PC_HP": "PowerOn"}
+            flat_values = {sid: data["value"] for sid, data in self.snapshot.items()}
+
+            # On pousse le tout dans Home Assistant
             self.set_state(
                 "sensor.jarvis_signals",
                 state="ok",
-                attributes=self.snapshot,
+                attributes={
+                    "metadata": self.snapshot,  # Historique complet avec "raw", "entity", "updated_at"
+                    "values": flat_values       # Extrait épuré directement exploitable pour le scoring
+                },
             )
         except Exception as e:
             self.log(f"Impossible d'écrire sensor.jarvis_signals : {e}", level="ERROR")
 
     # ─────────────────────────────────────────────
-    # API publique — appelable par les briques voisines
+    # API publique — appelable en direct par les briques
     # ─────────────────────────────────────────────
 
     def get_snapshot(self):
-        """Retourne le snapshot courant en mémoire."""
+        """Retourne le snapshot complet en mémoire."""
         return self.snapshot.copy()
 
     def get_signal(self, signal_id):
-        """Retourne la valeur normalisée d'un signal par son id."""
+        """Retourne la valeur normalisée (True/False/etc.) d'un signal par son id."""
         entry = self.snapshot.get(signal_id)
         return entry["value"] if entry else None
 
     def get_lux(self):
-        """
-        Retourne la luminosité ambiante courante en lux.
-        Point d'entrée unique pour le capteur lux —
-        le moteur de scoring l'appelle pour réguler
-        l'éclairage selon la lumière naturelle disponible.
-        """
-        entry = self.snapshot.get("Capteur luminosité")
+        """Retourne la luminosité filtrée via l'ID exact de l'index."""
+        entry = self.snapshot.get("Capteur_luminosite")
         if entry and entry["value"] is not None:
             return float(entry["value"])
         return None

@@ -1,5 +1,6 @@
 import appdaemon.plugins.hass.hassapi as hass
 import yaml
+import json
 import os
 from datetime import datetime
 
@@ -19,12 +20,14 @@ class LieuResolver(hass.Hass):
     def initialize(self):
         self.index_path = self.args.get(
             "index_path",
-            "/config/index.yaml"
+            "/homeassistant/index.yaml"
         )
         self.lieu_state_path = self.args.get(
             "lieu_state_path",
-            "/config/appdaemon/apps/lieu_state.json"
+            "/homeassistant/lieu_state.json"
         )
+
+        self.pieces_exclues = ["Materiel_mobile"]
 
         # Poids des types de capteurs pour la certitude
         # Plus le capteur est fiable pour localiser → poids élevé
@@ -82,6 +85,8 @@ class LieuResolver(hass.Hass):
         pieces = self.index.get("pieces", {})
 
         for piece, contenu in pieces.items():
+            if piece in self.pieces_exclues:
+                continue
             contexte = self._evaluer_piece(piece, contenu, snapshot)
             if contexte:
                 contextes.append(contexte)
@@ -234,6 +239,14 @@ class LieuResolver(hass.Hass):
         except Exception as e:
             self.log(f"Erreur écriture lieu_state.json : {e}", level="ERROR")
             return
+            
+        # ── AJOUT : Publication vers Home Assistant ──
+        # On extrait la liste brute des pièces actives (ex: ["Bureau", "Salon"])
+        pieces_actives = [c["piece"] for c in contextes]
+        
+        # On pousse cette liste dans l'état du sensor HA, et on met le JSON complet en attributs
+        self.set_state("sensor.jarvis_lieu", state=json.dumps(pieces_actives), attributes={"details": contextes})
+        # ─────────────────────────────────────────────
 
         # Log si changement
         pieces_actives = [c["piece"] for c in contextes]

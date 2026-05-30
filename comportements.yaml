@@ -34,6 +34,21 @@ etats:
   # CHAMBRE — sommeil / repos
   # ════════════════════════════════════════════
 
+  ENTREE_CHAMBRE:
+    # État transitoire géré par moteur_scoring lors de l'accès à la pièce
+    soleil:
+      Eclairage_Chambre: 0 # Lumière du jour suffisante
+      Chevet_Chambre: 0
+    sombre:
+      Eclairage_Chambre: 80 # Éclairage d'accueil modéré
+      Chevet_Chambre: 0
+    pluie:
+      Eclairage_Chambre: 100 # Compensation ciel couvert
+      Chevet_Chambre: 0
+    nuit:
+      Eclairage_Chambre: 40 # Accueil nocturne bas pour éviter l'éblouissement
+      Chevet_Chambre: 20
+
   SOMMEIL:
     # Obscurité totale demandée — l'environnement n'a aucun impact
     soleil:
@@ -414,3 +429,30 @@ etats:
       Eclairage_Couloir: 100
     nuit:
       Eclairage_Couloir: 30
+
+  # ════════════════════════════════════════════
+  # Extinction (Priorité 1 — Immédiat)
+  # ════════════════════════════════════════════
+
+  EXTINCTION_Chambre:
+    Eclairage_Chambre: 0
+    Chevet_Chambre: 0
+
+  EXTINCTION_Bureau:
+    Eclairage_bureau: 0
+    Spot_bureau: 0
+
+  EXTINCTION_Cuisine:
+    Interrupteur_Eclairage_Cuisine: false
+
+  EXTINCTION_Salle_de_Bain:
+    Eclairage_SDB: 0
+
+  EXTINCTION_Salon:
+    Eclairage_Salon_tv: 0
+    Eclairage_Salon_table: 0
+    Wled_Salon: 0
+    Spot_Ambiance: 0
+
+  EXTINCTION_Couloir:
+    Eclairage_Couloir: 0

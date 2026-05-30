@@ -7,8 +7,8 @@ from datetime import datetime
 
 class MoteurGemma(hass.Hass):
     """
-    Moteur GEMMA — v3.0
-    ====================
+    Moteur GEMMA — v3.2 (Correctif Suffixes & Durées)
+    ================================================
     Évalue un état par personne présente dans la maison.
 
     Entrées :
@@ -18,17 +18,7 @@ class MoteurGemma(hass.Hass):
 
     Sortie :
       sensor.jarvis_gemma_etats — attributs JSON, une clé par personne
-        {
-          "Jean":  { "etat": "ACTIF_BUREAU", "score": 0.91, "tous_scores": {...} },
-          "Marie": { "etat": "REPOS_TV",     "score": 0.87, "tous_scores": {...} }
-        }
-
-      gemma_state.json — même contenu sur disque (consommé par moteur_scoring)
-
-    Principe :
-      Le snapshot (signaux physiques) est commun à toute la maison.
-      Chaque personne présente reçoit sa propre évaluation indépendante.
-      Les personnes absentes ne sont pas évaluées.
+      gemma_state.json          — consommé par moteur_scoring
     """
 
     def initialize(self):
@@ -49,17 +39,20 @@ class MoteurGemma(hass.Hass):
             "sensor.jarvis_gemma_etats"
         )
 
-        self.poids = self._load_poids()
-        self.etats_precedents = {}   # { "Jean": "ACTIF_BUREAU", ... }
+        self.poids            = self._load_poids()
+        self.etats_precedents = {}   # { "Joanny": "ACTIF_BUREAU", ... }
 
-        # Évaluation toutes les 30 secondes
-        self.run_every(self._evaluer, "now", 30)
+        # Timer de durée — { "Presence_chambre_Presence_chambre_toutes_statiques": datetime, ... }
+        self.signal_debut    = {}
+
+        # Évaluation toutes les 60 secondes
+        self.run_every(self._evaluer, "now", 60)
 
         # Dump snapshot debug toutes les 5 minutes
         self.run_every(self._dump_snapshot_debug, "now", 300)
 
         self.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        self.log("  Moteur GEMMA v3.0 — multi-humain")
+        self.log("  Moteur GEMMA v3.2 = Correctif Suffixes Actif")
         self.log(f"  poids.yaml   : {self.poids_path}")
         self.log(f"  etats chargés: {list(self.poids.get('etats', {}).keys())}")
         self.log(f"  sortie       : {self.entity_gemma_etats}")
@@ -81,11 +74,6 @@ class MoteurGemma(hass.Hass):
     # ─────────────────────────────────────────────
 
     def _lire_personnes_home(self):
-        """
-        Retourne la liste des prénoms à domicile depuis sensor.jarvis_presence.
-        Ex: ["Jean", "Marie"]
-        Retourne [] si la maison est vide ou en cas d'erreur.
-        """
         try:
             raw   = self.get_state("sensor.jarvis_presence", attribute="all") or {}
             attrs = raw.get("attributes", {})
@@ -99,16 +87,21 @@ class MoteurGemma(hass.Hass):
     # ─────────────────────────────────────────────
 
     def _load_snapshot(self):
-        """
-        Reconstruit le dict signals depuis les deux entités HA.
-        Le snapshot est commun — il représente l'état physique de la maison entière.
-        """
         signals = {}
 
         # 1. Signaux directs (signal_reader.py)
         try:
-            raw = self.get_state("sensor.jarvis_signals", attribute="all") or {}
-            signals.update(raw.get("attributes", {}))
+            raw   = self.get_state("sensor.jarvis_signals", attribute="all") or {}
+            attrs = raw.get("attributes", {})
+            flat  = attrs.get("values", {})
+            meta  = attrs.get("metadata", {})
+
+            for sid, val in flat.items():
+                signals[sid] = {
+                    "value": self._normaliser_bool(val),
+                    "piece": meta.get(sid, {}).get("piece"),
+                    "type":  meta.get(sid, {}).get("type"),
+                }
         except Exception as e:
             self.log(f"Erreur lecture sensor.jarvis_signals : {e}", level="WARNING")
 
@@ -155,6 +148,42 @@ class MoteurGemma(hass.Hass):
         return val
 
     # ─────────────────────────────────────────────
+    # Timer de durée avec gestion des suffixes
+    # ─────────────────────────────────────────────
+
+    def _mettre_a_jour_timers(self, signals):
+        """
+        Met à jour les chronos des signaux réels (avec préfixes physiques).
+        """
+        maintenant = datetime.now()
+        for sid, entry in signals.items():
+            valeur = entry.get("value")
+            if valeur is True:
+                if self.signal_debut.get(sid) is None:
+                    self.signal_debut[sid] = maintenant
+            else:
+                self.signal_debut[sid] = None
+
+    def _duree_signal(self, signal_id):
+        """
+        Retourne la durée en secondes. Supporte l'ID exact ou la correspondance par suffixe.
+        """
+        # 1. Correspondance exacte
+        if signal_id in self.signal_debut:
+            debut = self.signal_debut.get(signal_id)
+        else:
+            # 2. Correspondance par suffixe (ex: "_chambre_toutes_statiques")
+            debut = None
+            for real_sid, time_start in self.signal_debut.items():
+                if real_sid.endswith(signal_id):
+                    debut = time_start
+                    break
+
+        if debut is None:
+            return None
+        return (datetime.now() - debut).total_seconds()
+
+    # ─────────────────────────────────────────────
     # Évaluation principale
     # ─────────────────────────────────────────────
 
@@ -171,10 +200,13 @@ class MoteurGemma(hass.Hass):
             self.log("[GEMMA] Snapshot vide — évaluation suspendue", level="WARNING")
             return
 
-        heure  = datetime.now().hour
-        modif  = self._modificateur_contexte(heure)
-        seuil  = self.poids.get("seuil", 0.75)
-        etats  = self.poids.get("etats", {})
+        # Synchronisation des chronos sur les vrais signaux reçus
+        self._mettre_a_jour_timers(signals)
+
+        heure = datetime.now().hour
+        modif = self._modificateur_contexte(heure)
+        seuil = self.poids.get("seuil", 0.75)
+        etats = self.poids.get("etats", {})
 
         resultats = {}
 
@@ -184,9 +216,9 @@ class MoteurGemma(hass.Hass):
                 score = self._calculer_score(signals, config, modif)
                 scores[nom_etat] = round(score, 3)
 
-            scores_tries    = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            scores_tries = sorted(scores.items(), key=lambda x: x[1], reverse=True)
             meilleur_etat, meilleur_score = scores_tries[0]
-            etat_final      = meilleur_etat if meilleur_score >= seuil else "INDETERMINE"
+            etat_final = meilleur_etat if meilleur_score >= seuil else "INDETERMINE"
 
             resultats[personne] = {
                 "etat":        etat_final,
@@ -194,7 +226,6 @@ class MoteurGemma(hass.Hass):
                 "tous_scores": scores,
             }
 
-            # Log uniquement si changement d'état
             precedent = self.etats_precedents.get(personne)
             if etat_final != precedent:
                 self.log(f"[GEMMA] {personne} : {precedent!r} → {etat_final!r} (score={meilleur_score})")
@@ -210,6 +241,27 @@ class MoteurGemma(hass.Hass):
         signaux_config = config_etat.get("signaux", {})
         if not signaux_config:
             return 0.0
+
+        contraintes = config_etat.get("contraintes", {})
+        duree_min   = contraintes.get("duree_min")
+        duree_max   = contraintes.get("duree_max")
+
+        if duree_min or duree_max:
+            # Signal primaire = poids positif le plus élevé
+            signal_primaire = max(
+                ((sid, p.get("poids", 0)) for sid, p in signaux_config.items() if p.get("poids", 0) > 0),
+                key=lambda x: x[1],
+                default=(None, 0)
+            )[0]
+
+            if signal_primaire:
+                duree = self._duree_signal(signal_primaire)
+                if duree is None:
+                    return 0.0  # Absent ou faux -> contrainte non respectée
+                if duree_min and duree < duree_min:
+                    return 0.0  # Trop précoce
+                if duree_max and duree > duree_max:
+                    return 0.0  # Trop tard
 
         score_total = 0.0
         poids_total = 0.0
@@ -232,10 +284,18 @@ class MoteurGemma(hass.Hass):
         return min(max(score_brut * modif_contexte, 0.0), 1.0)
 
     def _lire_valeur(self, signals, signal_id):
-        entry = signals.get(signal_id)
-        if not entry:
-            return None
-        return entry.get("value")
+        """
+        Lit une valeur dans le snapshot en supportant la résolution par suffixe.
+        """
+        # 1. Correspondance exacte (ex: PC_HP)
+        if signal_id in signals:
+            return signals[signal_id].get("value")
+
+        # 2. Correspondance par suffixe (ex: chambre_toutes_statiques)
+        for real_sid, entry in signals.items():
+            if real_sid.endswith(signal_id):
+                return entry.get("value")
+        return None
 
     def _evaluer_signal(self, valeur, params):
         if "valeur_active" in params:
@@ -281,21 +341,6 @@ class MoteurGemma(hass.Hass):
     # ─────────────────────────────────────────────
 
     def _publier(self, resultats, heure=None, modif=None):
-        """
-        Publie les N états dans sensor.jarvis_gemma_etats (attributs)
-        et dans gemma_state.json (consommé par moteur_scoring).
-
-        Format gemma_state.json :
-        {
-          "generated_at": "2026-05-27T14:32:00",
-          "heure": 14,
-          "modificateur": 1.0,
-          "personnes": {
-            "Jean":  { "etat": "ACTIF_BUREAU", "score": 0.91, "tous_scores": {...} },
-            "Marie": { "etat": "REPOS_TV",     "score": 0.87, "tous_scores": {...} }
-          }
-        }
-        """
         maintenant = datetime.now().isoformat(timespec="seconds")
 
         sortie = {
@@ -305,14 +350,12 @@ class MoteurGemma(hass.Hass):
             "personnes":    resultats,
         }
 
-        # Écriture disque
         try:
             with open(self.gemma_state_path, "w") as f:
                 json.dump(sortie, f, ensure_ascii=False, indent=2)
         except Exception as e:
             self.log(f"Erreur écriture gemma_state.json : {e}", level="ERROR")
 
-        # Publication HA — un attribut par personne
         try:
             attrs = {
                 personne: {
@@ -326,39 +369,62 @@ class MoteurGemma(hass.Hass):
 
             self.set_state(
                 self.entity_gemma_etats,
-                state=str(len(resultats)),   # nb de personnes évaluées
+                state=str(len(resultats)),
                 attributes=attrs,
             )
         except Exception as e:
             self.log(f"Erreur mise à jour {self.entity_gemma_etats} : {e}", level="WARNING")
 
     # ─────────────────────────────────────────────
-    # Dump snapshot debug toutes les 5min
+    # Dump snapshot debug (Également corrigé)
     # ─────────────────────────────────────────────
 
     def _dump_snapshot_debug(self, kwargs=None):
-        signals    = self._load_snapshot()
-        etats      = self.poids.get("etats", {})
-        personnes  = self._lire_personnes_home()
+        signals   = self._load_snapshot()
+        etats     = self.poids.get("etats", {})
+        personnes = self._lire_personnes_home()
+        maintenant = datetime.now()
 
         analyse = {}
         for nom_etat, config in etats.items():
             signaux_config = config.get("signaux", {})
             detail = {}
             for signal_id, params in signaux_config.items():
-                entry = signals.get(signal_id)
+                
+                # Récupération de la clé réelle associée
+                real_key = None
+                if signal_id in signals:
+                    real_key = signal_id
+                else:
+                    for k in signals.keys():
+                        if k.endswith(f"_{signal_id}"):
+                            real_key = k
+                            break
+
+                entry = signals.get(real_key) if real_key else None
+                
                 detail[signal_id] = {
                     "poids":           params.get("poids"),
                     "valeur_active":   params.get("valeur_active", "—"),
                     "valeur_snapshot": entry.get("value") if entry else "ABSENT",
                     "present":         entry is not None,
+                    "duree_s":         self._duree_signal(signal_id),
                 }
             analyse[nom_etat] = detail
 
+        # Extraction globale des durées formatées pour le JSON
+        durees_actives = {}
+        for config in etats.values():
+            for signal_id in config.get("signaux", {}).keys():
+                d = self._duree_signal(signal_id)
+                if d is not None:
+                    durees_actives[signal_id] = round(d)
+
         sortie = {
-            "generated_at":     datetime.now().isoformat(timespec="seconds"),
+            "generated_at":     maintenant.isoformat(timespec="seconds"),
             "personnes_home":   personnes,
             "snapshot_keys":    sorted(signals.keys()),
+            "durees_actives":   durees_actives,
             "analyse_par_etat": analyse,
         }
 
